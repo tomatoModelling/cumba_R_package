@@ -4,4 +4,4 @@ Title: Carbon Use Model for yield and Brix Assessment
 Version: 0.0.1.0
 RoxygenNote: 7.3.2
 Encoding: UTF-8
-Imports: data.table
+Imports: data.table (>= 1.9.8)

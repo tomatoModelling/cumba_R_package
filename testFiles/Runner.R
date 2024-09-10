@@ -9,7 +9,7 @@ library(readxl)
 library(sirad)
 library(tidyr)
 library(devtools)
-#install_github("tomatoModelling/cumba_R_package");
+#4install_github("tomatoModelling/cumba_R_package");
 library(cumba)
 
 

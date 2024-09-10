@@ -12,7 +12,7 @@
 #' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
 #' @examples 
 #' output <- cumba(weather, param, estimateRad=T, estimateET0=T, deficitIrrigation=F, waterStressLevel=.5, minimumTurn = 4,irrigation_df);
-#' @import data.table
+#' @import data.table (>= 1.9.8)
 #' @export
 
 cumba <- function(weather, param, estimateRad=T, estimateET0=T,
