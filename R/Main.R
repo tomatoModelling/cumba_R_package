@@ -18,6 +18,9 @@
 cumba <- function(weather, param, estimateRad=T, estimateET0=T,
                   deficitIrrigation=F, waterStressLevel=.5, minimumTurn = 4,irrigation_df)
 {
+  #load dependencies
+  library(data.table)
+  
   #opening message
   cat(crayon::red("                       _      __   \n"))
   cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
