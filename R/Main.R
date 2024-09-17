@@ -95,7 +95,6 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   
   # Check if param list contains all required elements
   required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax")
-  
   missing_param_elements <- setdiff(required_param_elements, names(param))
   if (length(missing_param_elements) > 0) {
     stop(crayon::red(paste("Missing required elements in 'param':", paste(missing_param_elements, collapse = ", "))))
@@ -126,7 +125,19 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   waterStressSensitivity<- - param$WaterStressSensitivity
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
-
+  
+  #Check Plant cardinal temperature
+  if (param$tMax < param$tOpt || param$tMax < param$param$tBase || param$tOpt < param$tBase) {
+    stop(crayon::red(paste("Alert: Please ensure that tMax is higher than tOpt, 
+                and/or tMax is higher than tBase, 
+                and/or tOpt is higher than tBase!\n"))
+  } 
+  
+   #Check Soil hydrologic properties
+  if (param$fieldCapacity < param$wiltingPoint)  {
+    stop(crayon::red(paste("Alert: Please ensure that field capacity is higher than wilting point!\n"))
+  } 
+  
   #compute maximum value of the double logistic for flowering
   x<-seq(0:100)
   floweringPotentialFunction<-sapply(x, floweringDynamics, floweringSlope=floweringSlope,       floweringLag=floweringLag, floweringMax=floweringMax)
