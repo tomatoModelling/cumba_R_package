@@ -105,15 +105,13 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   if (param$Tmax < param$Topt || param$Tmax < param$Tbase || param$Topt < param$Tbase) {
     stop(crayon::red(paste("Alert: Please ensure that tMax is higher than tOpt, 
                 and/or tMax is higher than tBase, 
-                and/or tOpt is higher than tBase!\n"))
-  } 
+                and/or tOpt is higher than tBase!\n"))) 
+    } 
   
   #Check Soil hydrologic properties
   if (param$FieldCapacity < param$WiltingPoint)  {
-    stop(crayon::red(paste("Alert: Please ensure that field capacity is higher than wilting point!\n"))
+    stop(crayon::red(paste("Alert: Please ensure that field capacity is higher than wilting point!\n")))
   }
-  
-  
   
   #Extract parameters from the input parameter list 'param'----
   tBase<-param$Tbase

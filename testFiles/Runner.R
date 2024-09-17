@@ -9,12 +9,14 @@ library(readxl)
 library(sirad)
 library(tidyr)
 library(devtools)
-#4install_github("tomatoModelling/cumba_R_package");
+library(remotes)
+#install_github("tomatoModelling/cumba_R_package")
 library(cumba)
 
 
 # Set this directory as the working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
 
 # Read excel sheets with input data ----
   excel_file <- paste0("Dataset Carucci et al. new.xlsx")
