@@ -1,6 +1,6 @@
 ﻿parameter,value,min,max,unit
 Tbase,10,6,13,test
-Topt,26,24,27,test
+Topt,36,24,27,test
 Tmax,35,30,33,test
 Theat,40,33.5,45,test
 Tcold,0,0,5,test
