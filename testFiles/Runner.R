@@ -49,6 +49,8 @@ weather<-weather |>
 
 library(data.table)
 
+source("..//R//Main.R")
+
 #call the cumba function
 outputs<-cumba(weather, param, 
                estimateRad = T,estimateET0 = T,

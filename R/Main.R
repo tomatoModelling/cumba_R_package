@@ -498,14 +498,29 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   }
   
   #flatten the output list
-  flattenList <- unlist(outputsAll, recursive = F) # Flatten the list
-       dfOut <- data.table::rbindlist(flattenList, fill=T)
-       colsToConvert <- names(dfOut)[-c(1,12)]
+  #flattenList <- unlist(outputsAll, recursive = F) # Flatten the list
+  #     dfOut <- data.table::rbindlist(flattenList, fill=T)
+  #     colsToConvert <- names(dfOut)[-c(1,12)]
   
   #create the output dataframe
-  dfOut<-dfOut[, (colsToConvert) := lapply(.SD, as.numeric), 
-              .SDcols = colsToConvert]
+  #dfOut<-dfOut[, (colsToConvert) := lapply(.SD, as.numeric), 
+  #            .SDcols = colsToConvert]
   
+  # Flatten the output list
+  flattenList <- unlist(outputsAll, recursive = FALSE) # Flatten the list
+  
+  # Bind rows into a dataframe using do.call and rbind
+  dfOut <- do.call(rbind, flattenList)
+  
+  # Convert to data.frame in case the result is still a list
+  dfOut <- as.data.frame(dfOut)
+  
+  # Specify the columns to convert (all columns except the first and the 12th)
+  colsToConvert <- setdiff(names(dfOut), names(dfOut)[c(1, 12)])
+  
+  
+  # Convert specified columns to numeric using lapply and handle NA coercion
+  dfOut[colsToConvert] <- lapply(dfOut[colsToConvert], function(x) as.numeric(as.character(x)))
   
   ## Print the execution time ---- 
   endTime <- Sys.time()
