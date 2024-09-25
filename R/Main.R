@@ -18,9 +18,6 @@
 cumba <- function(weather, param, estimateRad=T, estimateET0=T,
                   deficitIrrigation=F, waterStressLevel=.5, minimumTurn = 4,irrigation_df)
 {
-  #load dependencies
-  library(data.table)
-  
   #opening message
   cat(crayon::red("                       _      __   \n"))
   cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
@@ -491,7 +488,12 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
         cat(crayon::green(paste("experiment ", thisId, " in site ", 
                                    thisSite, " and year ", thisYear, " executed\n")))#message to console
       }
-      tempOutputsExperiment<-data.table::rbindlist(outputsExperiment)
+      #tempOutputsExperiment<-data.table::rbindlist(outputsExperiment)
+      # Use do.call and rbind to bind rows into a single data frame
+      tempOutputsExperiment <- do.call(rbind, outputsExperiment)
+      # Convert to data frame in case it's still a list
+      tempOutputsExperiment <- as.data.frame(tempOutputsExperiment, stringsAsFactors = FALSE)
+      
       outputsYear[[as.character(thisYear)]]<-tempOutputsExperiment
     }
     outputsAll[[as.character(thisSite)]]<-outputsYear
