@@ -47,7 +47,7 @@ weather<-weather |>
   rename(Rad=RAD) |> 
   mutate(Lat = 35) 
 
-library(data.table)
+#library(data.table)
 
 source("..//R//Main.R")
 
@@ -71,9 +71,33 @@ yieldPlot<-yield |>
 outputs_ref<-outputs |> 
   left_join(yieldPlot,by=c('experiment'='ID','doy'='doy'))
 
+ggplot(outputs_ref |> filter(year==2017 & experiment==25) )+
+  geom_area(aes(x=doy,y=floweringRateIde*40),col='black',alpha=0.5)+
+  geom_area(aes(x=doy,y=floweringRateAct*40),col='red',alpha=0.5)+
+  #geom_line(aes(x=doy,y=floweringStatePot*10),col='black',alpha=0.5)+
+  #geom_line(aes(x=doy,y=floweringStateAct*10),col='red',alpha=0.5)+
+  #geom_line(aes(x=doy,y=fruitSetCoefficient),col='black',alpha=0.5)+
+  geom_line(aes(x=doy,y=fruitsStatePot*.01),col='black',alpha=1,linetype=2,size=1)+
+  geom_line(aes(x=doy,y=fruitsStateIde*.01),col='blue',alpha=1,size=1)+
+  geom_line(aes(x=doy,y=fruitsStateAct*.01),col='red',alpha=1,size=1)+
+  #geom_col(aes(x=doy,y=heatStress*10,fill=factor(phenoCode)),fill='red')+
+  #geom_col(aes(x=doy,y=waterStress*10,fill=factor(phenoCode)),fill='blue')+
+  geom_line(aes(x=doy,y=fIntPot*20),size=2)+
+  geom_line(aes(x=doy,y=fIntAct*20),size=2,col='darkgreen')+
+  geom_line(aes(x=doy,y=carbonRatePot))+
+  geom_line(aes(x=doy,y=carbonRateIde),col='blue')+
+  geom_line(aes(x=doy,y=carbonRateAct),col='darkred',size=2)+
+  #geom_line(aes(x=doy,y=carbonStatePot/100))+
+  #geom_line(aes(x=doy,y=carbonStateAct/100),col='darkred')+
+  #ylim(0,40)+
+  theme_bw()+
+  xlim(120,230)+
+  #facet_wrap(~experiment,ncol=8,scales='free_y')+
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank())
 
 
-############## PLOT THE OUTPUT  ###############################################
+  ############## PLOT THE OUTPUT  ###############################################
 #ggplot(outputs |> filter(experiment == 1))+
 ggplot(outputs_ref |> filter(year==2017) )+
   #geom_area(aes(x=doy,y=floweringRatePot*1000),col='yellow',alpha=0.5)+
@@ -122,6 +146,9 @@ ggplot(outputs_ref |> filter(year==2017) )+
                                           name="Precipitation and Irrigation (mm)"))+
   theme(strip.background = element_blank(),
         strip.text.x = element_blank())
+
+
+
 ggsave('soilWaterAndIrrigation.png',width=14,height=3)
 
 # Filter to keep only rows where doy is an integer and var is 0, 1, 2, or 3

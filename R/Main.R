@@ -11,8 +11,6 @@
 #' @param irrigation_df a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
 #' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
 #' @examples 
-#' output <- cumba(weather, param, estimateRad=T, estimateET0=T, deficitIrrigation=F, waterStressLevel=.5, minimumTurn = 4,irrigation_df);
-#' @import data.table (>= 1.9.8)
 #' @export
 
 cumba <- function(weather, param, estimateRad=T, estimateET0=T,
@@ -145,25 +143,24 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   
   #Define the output vector with column names for the results dataframe ----
   outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',#8
-                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',#14
-                 'trc1','ev1','dc1','wc1mm','daysNoRain',#19
-                 'trc2','dc2','wc2mm',#22
-                 'dc3','wc3mm',#24
-                 'wc1',"wc2","wc3",#27
-                 'waterStress',#28
-                 'heatStress','coldStress','fIntPot','fIntAct',#33
-                 'kc','et0','etR',#36
-                 'radiation',#37
-                 'carbonRatePot','carbonStatePot','carbonRateAct','carbonStateAct',#41
-                 'floweringRatePot','floweringStatePot','floweringRateAct','floweringStateAct','cycleCompletion',#46
-                 'fruitSetCoefficient','fruitsStatePot','fruitsStateAct')#49
+                'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',#14
+                'trc1','ev1','dc1','wc1mm','daysNoRain',#19
+                'trc2','dc2','wc2mm',#22
+                'dc3','wc3mm',#24
+                'wc1',"wc2","wc3",#27
+                'waterStress',#28
+                'heatStress','coldStress','fIntPot','fIntAct',#33
+                'kc','et0','etR',#36
+                'radiation',#37
+                'carbonRateIde','carbonStateIde','carbonRatePot','carbonStatePot','carbonRateAct','carbonStateAct',#41
+                'floweringRateIde','floweringStateIde','floweringRateAct','floweringStateAct','cycleCompletion',#46
+                'fruitSetCoefficient','fruitsStateIde','fruitsStatePot','fruitsStateAct')#49
   
  #Initialize lists to store outputs at different levels (years, experiments, sites)----
   outputs<-list()
   outputsYear<-list()
   outputsExperiment<-list()
   outputsAll<-list()
-
 
   ## Iterate through each site ---- 
   #TODO: only debug
@@ -223,10 +220,12 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
         
         #Initialize state variables
         gddState <- 0
+        carbonStateIde <- 0
         carbonStatePot <- 0
         carbonStateAct <- 0
         fruitsStatePot<-0
         fruitsStateAct<-0
+        fruitsStateIde<-0
         rootState<-rootDepthInitial
         daysNoRain<-0
         wc1mm<-(3)*bulkDensity*fieldCapacity *10
@@ -337,11 +336,12 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
           ## interception function of solar radiation ----
           fIntPot<-fIntCompute(fIntMax,cycleLength,transplantingLag,halfIntGrowth,
                                halfIntSenescence,initialInt,gddState)
+          
           if(length(outputs)>0 & phenoCode>=1)
           { 
-            fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][[31]]
-            fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][[28]]
-            fIntAct<-outputs[[as.character(doy-1)]][[32]] + fIntActRate
+            fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
+            fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntActRate
           }else
           {
             fIntPotRate = fIntPot
@@ -366,10 +366,10 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
           #2. Compute water stress factor from water stress of previous day
           if(length(outputs)>0) #check if it is the first day
           {
-            wc1mm<-outputs[[as.character(doy-1)]][[18]]
-            wc2mm<-outputs[[as.character(doy-1)]][[22]]
-            wc3mm <-outputs[[as.character(doy-1)]][[24]]
-            ftsw <- outputs[[as.character(doy-1)]][[28]]
+            wc1mm<-outputs[[as.character(doy-1)]][['wc1mm']]
+            wc2mm<-outputs[[as.character(doy-1)]][['wc2mm']]
+            wc3mm <-outputs[[as.character(doy-1)]][['wc3mm']]
+            ftsw <- outputs[[as.character(doy-1)]][['waterStress']]
           }
           waterStressFactor<-waterStressFunction(ftsw,waterStressSensitivity)
           
@@ -419,65 +419,73 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
             
 
           ## Compute carbon rates and update the carbon states (potential and actual)----
-          carbonRatePot <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
+          carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
+          carbonRatePot <- carbonRate(rue,radSim,gdd,fIntPot,hs,cs,1) #only heat and cold stress
           carbonRateAct <- carbonRate(rue,radSim,gdd,fIntAct,hs,cs,ws)
+          # daily integration
+          carbonStateIde <- carbonStateIde + carbonRateIde
           carbonStatePot<-carbonStatePot + carbonRatePot
           carbonStateAct<-carbonStateAct + carbonRateAct
+          
          
           ## Compute flowering rates and update the flowering states (potential and actual) ----
           if(cycleCompletion>=floweringLag)
           {
-            floweringRatePot<-floweringDynamics(cycleCompletion,floweringLag,
+            floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
-            floweringStatePot <- (floweringRatePot/floweringPotentialSum + 
-                                    outputs[[as.character(doy-1)]][[42]]) 
-            floweringRateAct <-floweringRatePot*(1-hs)
+            floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
+                                    outputs[[as.character(doy-1)]][['floweringStateIde']]) 
+            
+            floweringRateAct <-floweringRateIde*(1-hs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
-                                     outputs[[as.character(doy-1)]][[44]])  
+                                     outputs[[as.character(doy-1)]][['floweringStateAct']])  
           }else
           {
-            floweringRatePot<-0
-            floweringStatePot<-0
+            floweringRateIde<-0
+            floweringStateIde<-0
             floweringRateAct<-0
             floweringStateAct<-0
           }
           
           ## compute fruit set coefficient
-          fruitSetCoefficient <- 1-(floweringStatePot-floweringStateAct)
+          fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
           
           #compute partitioning to fruits
+          fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
           if(cycleCompletion>=floweringLag)
           {
-            fruitsRatePot <- carbonRatePot
-            fruitsRateAct<-carbonRateAct*fruitSetCoefficient
+            fruitsRateIde <- carbonRateIde
+            fruitsRatePot<-carbonRatePot * fruitSetCoefficient
+            fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
           
           if(length(outputs)>0) #check if it is the first day
           {
-            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][[47]]
-            fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][[48]]
+            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']] #47
+            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']] #47
+            fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
           }
           
-          #Combine all the results into the outputs vector ----
-          outputs[[as.character(doy)]] <- list(thisSite,thisYear,thisId,#3
-                                      doy,tX,tN,p,irrigation,#8
-                                      gddRate, gddState,phenoCode,phenoStage,#12
-                                      rootRate,rootState,#14
-                                      trc1,ev1,dc1,wc1mm,daysNoRain,#19
-                                      trc2,dc2,wc2mm,#22
-                                      dc3,wc3mm,#24
-                                      wc1,wc2,wc3,#27
-                                      ws,hs,cs,#30
-                                      fIntPot,fIntAct,#32
-                                      kc,et0,etR,radSim,#36
-                                      carbonRatePot,carbonStatePot,carbonRateAct,carbonStateAct,#40
-                                      floweringRatePot,floweringStatePot,
-                                      floweringRateAct,floweringStateAct,#44
-                                      cycleCompletion,fruitSetCoefficient,
-                                      fruitsStatePot,fruitsStateAct)#48
-        
+          outputs[[as.character(doy)]]<-setNames(
+            list(
+              thisSite, thisYear, thisId, doy, tX, tN, p, irrigation, # 8
+              gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, # 14
+              trc1, ev1, dc1, wc1mm, daysNoRain, # 19
+              trc2, dc2, wc2mm, # 22
+              dc3, wc3mm, # 24
+              wc1, wc2, wc3, # 27
+              ws, # Assuming ws maps to 'waterStress', # 28
+              hs, cs, fIntPot, fIntAct, # 33
+              kc, et0, etR, # 36
+              radSim, # 37
+              carbonRateIde,carbonStateIde,carbonRatePot, carbonStatePot, carbonRateAct, carbonStateAct, # 41
+              floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct, # 45
+              cycleCompletion, # 46
+              fruitSetCoefficient, fruitsStateIde, fruitsStatePot, fruitsStateAct # 49
+            ), 
+            outputNames)
         }
         ## Store the result in the outputs list ----     
         tempOutputs<-as.data.frame(t((matrix(unlist(outputs), 
@@ -488,7 +496,7 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
         cat(crayon::green(paste("experiment ", thisId, " in site ", 
                                    thisSite, " and year ", thisYear, " executed\n")))#message to console
       }
-      #tempOutputsExperiment<-data.table::rbindlist(outputsExperiment)
+      
       # Use do.call and rbind to bind rows into a single data frame
       tempOutputsExperiment <- do.call(rbind, outputsExperiment)
       # Convert to data frame in case it's still a list
@@ -498,16 +506,7 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
     }
     outputsAll[[as.character(thisSite)]]<-outputsYear
   }
-  
-  #flatten the output list
-  #flattenList <- unlist(outputsAll, recursive = F) # Flatten the list
-  #     dfOut <- data.table::rbindlist(flattenList, fill=T)
-  #     colsToConvert <- names(dfOut)[-c(1,12)]
-  
-  #create the output dataframe
-  #dfOut<-dfOut[, (colsToConvert) := lapply(.SD, as.numeric), 
-  #            .SDcols = colsToConvert]
-  
+
   # Flatten the output list
   flattenList <- unlist(outputsAll, recursive = FALSE) # Flatten the list
   
@@ -519,7 +518,6 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   
   # Specify the columns to convert (all columns except the first and the 12th)
   colsToConvert <- setdiff(names(dfOut), names(dfOut)[c(1, 12)])
-  
   
   # Convert specified columns to numeric using lapply and handle NA coercion
   dfOut[colsToConvert] <- lapply(dfOut[colsToConvert], function(x) as.numeric(as.character(x)))
