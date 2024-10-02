@@ -24,7 +24,7 @@ It is a daily time step simulation model which computes the yield and brix degre
 
 ## Table of Contents 
 
-- [1. Input Data 🖋️:](#1-input-data)
+- [1. Input Data](#1-input-data)
 - [2. Examples](#2-examples)
   - [2.1 Plotting](#21-plotting)
     - [2.1.1 Dynamic plots](#211-dynamic-plots)
@@ -43,7 +43,7 @@ It is a daily time step simulation model which computes the yield and brix degre
 - [4. Help](#4-help)
 - [5. Citation](#5-Citation)
 
-## 1. Input Data 🖋️:
+## 1. Input Data
 Cumba Model needs of following input data: 
 - `weather `: a dataframe with weather data which must have the following columns...
 - `param `: a dataframe with model parameters values
