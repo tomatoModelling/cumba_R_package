@@ -17,12 +17,14 @@
 
 # Cumbà Model 🍅:
 CUMBA’ (Carbon Use Model for yield and Brix Assessment) is a simple process-based model developed to estimate the quantitative and qualitative aspects of tomato production as determined
-by crop water requirement.
+by crop water requirement. 
+It is a daily time step simulation model which computes the yield and brix degree of a tomato crop as a function of weather data and irrigation options.
 
+---
 
 ## Table of Contents 
 
-- [1. Installation](#1-installation)
+- [1. Input Data](#1-input-data)
 - [2. Examples](#2-examples)
   - [2.1 Plotting](#21-plotting)
     - [2.1.1 Dynamic plots](#211-dynamic-plots)
@@ -41,14 +43,22 @@ by crop water requirement.
 - [4. Help](#4-help)
 - [5. Citation](#5-Citation)
 
-</a>
-</p>
-</a>
-</p>
-</a>
-</p>
-</a>
-</p>
+## 1. Input Data 🖋️:
+Cumba Model needs of following input data: 
+- `weather `: a dataframe with weather data which must have the following columns...
+- `param `: a dataframe with model parameters values
+- `estimateRad `: a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have 
+  the Rad column
+- `estimateET0 `:  a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
+- `deficitIrrigation `: a boolean value to estimate irrigation requirements. Default to 'false', implying that the irrigation_df is provided.
+- `waterStressLevel `: a float corresponding to the threshold of water stress to trigger automatic irrigation. Default to .5, it is needed only if deficitIrrigation is 'true'.
+- `minimumTurn `: an integer corresponding to the minimum number of days elapsed from the previous irrigation event. Default to 4, it is needed only if deficitIrrigation is 'true'.
+- `irrigation_df `: a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
+
+
+
+
+
 
 
 
