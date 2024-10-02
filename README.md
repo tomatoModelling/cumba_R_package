@@ -3,4 +3,14 @@
 </p>
 <p align="center">
     <em>Carbon Use Model for yield and Brix Assessment.</em>
+</a>
 </p>
+
+---
+
+**GitHub**: <a href="https://github.com/tomatoModelling/cumba_R_package" target="_blank">github.com/tomatoModelling/cumba_R_package</a>
+
+
+**Paper**: <a href="" target="_blank"></a>
+
+---
