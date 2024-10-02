@@ -41,5 +41,43 @@ by crop water requirement.
 - [4. Help](#4-help)
 - [5. Citation](#5-Citation)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## 5. Citation 🔖:
 If you use this work, please consider citing the following paper:
