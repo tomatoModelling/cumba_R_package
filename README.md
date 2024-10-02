@@ -62,5 +62,5 @@ Cumba Model needs of following input data:
 
 
 
-## 5. Citation 🔖:
+## 5. Citation
 If you use this work, please consider citing the following paper:
