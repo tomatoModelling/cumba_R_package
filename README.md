@@ -41,41 +41,14 @@ by crop water requirement.
 - [4. Help](#4-help)
 - [5. Citation](#5-Citation)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+</a>
+</p>
+</a>
+</p>
+</a>
+</p>
+</a>
+</p>
 
 
 
