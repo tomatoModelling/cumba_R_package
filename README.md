@@ -45,15 +45,15 @@ It is a daily time step simulation model which computes the yield and brix degre
 
 ## 1. Input Data
 Cumba Model needs of following input data: 
-- `weather `: a dataframe with weather data which must have the following columns...
-- `param `: a dataframe with model parameters values
-- `estimateRad `: a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have 
+- `weather`: a dataframe with weather data which must have the following columns...
+- `param`: a dataframe with model parameters values
+- `estimateRad`: a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have 
   the Rad column
-- `estimateET0 `:  a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
-- `deficitIrrigation `: a boolean value to estimate irrigation requirements. Default to 'false', implying that the irrigation_df is provided.
-- `waterStressLevel `: a float corresponding to the threshold of water stress to trigger automatic irrigation. Default to .5, it is needed only if deficitIrrigation is 'true'.
-- `minimumTurn `: an integer corresponding to the minimum number of days elapsed from the previous irrigation event. Default to 4, it is needed only if deficitIrrigation is 'true'.
-- `irrigation_df `: a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
+- `estimateET0`: a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
+- `deficitIrrigation`: a boolean value to estimate irrigation requirements. Default to 'false', implying that the irrigation_df is provided.
+- `waterStressLevel`: a float corresponding to the threshold of water stress to trigger automatic irrigation. Default to .5, it is needed only if deficitIrrigation is 'true'.
+- `minimumTurn`: an integer corresponding to the minimum number of days elapsed from the previous irrigation event. Default to 4, it is needed only if deficitIrrigation is 'true'.
+- `irrigation_df`: a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
 
 
 
