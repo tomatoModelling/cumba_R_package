@@ -10,7 +10,7 @@ library(sirad)
 library(tidyr)
 library(devtools)
 library(remotes)
-#install_github("tomatoModelling/cumba_R_package")
+install_github("tomatoModelling/cumba_R_package")
 library(cumba)
 
 
@@ -49,7 +49,7 @@ weather<-weather |>
 
 #library(data.table)
 
-source("..//R//Main.R")
+#source("..//R//Main.R")
 
 #call the cumba function
 outputs<-cumba(weather, param, 
