@@ -52,10 +52,12 @@ weather<-weather |>
 source("..//R//Main.R")
 
 #call the cumba function
-outputs<-cumba(weather, param, 
-               estimateRad = T,estimateET0 = T,
-              deficitIrrigation =F, waterStressLevel=0.5, minimumTurn = 4,
+outputs<-cumba_experiment(weather, param, estimateRad = T,estimateET0 = T,
               irrigation_df)   
+
+#call the cumba function
+outputs<-cumba_scenario(weather, param, estimateRad = T,estimateET0 = T,
+                        waterStressLevel=.2, minimumTurn = 10)  
 
 lastDay<-outputs |> 
   group_by(experiment) |> 
@@ -71,7 +73,7 @@ yieldPlot<-yield |>
 outputs_ref<-outputs |> 
   left_join(yieldPlot,by=c('experiment'='ID','doy'='doy'))
 
-ggplot(outputs_ref |> filter(year==2017 & experiment==25) )+
+ggplot(outputs_ref  )+
   geom_area(aes(x=doy,y=floweringRateIde*40),col='black',alpha=0.5)+
   geom_area(aes(x=doy,y=floweringRateAct*40),col='red',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStatePot*10),col='black',alpha=0.5)+
@@ -92,7 +94,7 @@ ggplot(outputs_ref |> filter(year==2017 & experiment==25) )+
   #ylim(0,40)+
   theme_bw()+
   xlim(120,230)+
-  #facet_wrap(~experiment,ncol=8,scales='free_y')+
+  facet_wrap(~experiment,ncol=8,scales='free_y')+
   theme(strip.background = element_blank(),
         strip.text.x = element_blank())
 
