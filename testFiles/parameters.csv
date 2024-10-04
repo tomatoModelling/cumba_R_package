@@ -15,7 +15,7 @@ RUE,2.3,1,3,test
 KcIni,0.1,0.05,0.15,test
 KcMax,1.5,0.75,1.5,test
 RootIncrease,1,0.5,1.5,test
-RootDepthMax,80,50,100,test
+RootDepthMax,60,50,100,test
 RootDepthInitial,4,2,6,test
 FieldCapacity,0.3,0.2,0.45,test
 WiltingPoint,0.1,0.05,0.15,test

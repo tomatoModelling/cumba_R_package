@@ -10,8 +10,8 @@ library(sirad)
 library(tidyr)
 library(devtools)
 library(remotes)
-install_github("tomatoModelling/cumba_R_package")
-library(cumba)
+#install_github("tomatoModelling/cumba_R_package")
+#library(cumba)
 
 
 # Set this directory as the working directory ----
@@ -49,7 +49,7 @@ weather<-weather |>
 
 #library(data.table)
 
-#source("..//R//Main.R")
+source("..//R//Main.R")
 
 #call the cumba function
 outputs<-cumba(weather, param, 
@@ -99,18 +99,18 @@ ggplot(outputs_ref |> filter(year==2017 & experiment==25) )+
 
   ############## PLOT THE OUTPUT  ###############################################
 #ggplot(outputs |> filter(experiment == 1))+
-ggplot(outputs_ref |> filter(year==2017) )+
+ggplot(outputs_ref)+
   #geom_area(aes(x=doy,y=floweringRatePot*1000),col='yellow',alpha=0.5)+
   #geom_area(aes(x=doy,y=floweringRateAct*1000),col='pink4',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStatePot*100),col='yellow4',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStateAct*100),col='pink4',alpha=0.5)+
   #geom_line(aes(x=doy,y=fruitSetCoefficient),col='black',alpha=0.5)+
   #geom_line(aes(x=doy,y=fruitsStatePot*0.001),col='tomato',alpha=1,linetype=2,size=1)+
-  #geom_line(aes(x=doy,y=fruitsStateAct*0.001),col='tomato3',alpha=1,size=1)+
-  #geom_point(aes(x=doy,y=yieldMean*0.001),col='tomato4',alpha=0.5)+
-  #geom_errorbar(aes(x=doy,ymin=yieldMean*0.001-yieldSD*0.001,ymax=yieldMean*0.001+yieldSD*0.001),col='tomato4',alpha=0.5)+
+  geom_line(aes(x=doy,y=fruitsStateAct*0.001),col='tomato3',alpha=1,size=1)+
+  geom_point(aes(x=doy,y=yieldMean*0.001),col='tomato4',alpha=0.5)+
+  geom_errorbar(aes(x=doy,ymin=yieldMean*0.001-yieldSD*0.001,ymax=yieldMean*0.001+yieldSD*0.001),col='tomato4',alpha=0.5)+
   
-  geom_line(aes(x=doy,y=0.4-rootState/250),size=.8)+
+  #geom_line(aes(x=doy,y=0.4-rootState/250),size=.8)+
   #geom_line(aes(x=doy,y=TRC1),col='red')+
   #geom_line(aes(x=doy,y=EV1),col='blue')+
   #geom_line(aes(x=doy,y=DC1),col='cyan')+

@@ -228,14 +228,6 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
         fruitsStateIde<-0
         rootState<-rootDepthInitial
         daysNoRain<-0
-        wc1mm<-(3)*bulkDensity*fieldCapacity *10
-        wc2mm<-(rootDepthInitial)*bulkDensity*fieldCapacity *10
-        wc3mm<-(rootDepthMax-rootDepthInitial)*bulkDensity*wiltingPoint*10
-        wc1<-0
-        wc2<-0
-        wc3<-0
-        newSoil<-0
-        ftsw<-1
         ws<-1
         
         # Current year being processed 
@@ -363,56 +355,38 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
             daysNoRain<-0
           }
           
-          #2. Compute water stress factor from water stress of previous day
-          if(length(outputs)>0) #check if it is the first day
-          {
-            wc1mm<-outputs[[as.character(doy-1)]][['wc1mm']]
-            wc2mm<-outputs[[as.character(doy-1)]][['wc2mm']]
-            wc3mm <-outputs[[as.character(doy-1)]][['wc3mm']]
-            ftsw <- outputs[[as.character(doy-1)]][['waterStress']]
-          }
-          waterStressFactor<-waterStressFunction(ftsw,waterStressSensitivity)
+          #compute soil water dynamics
+          soilModel <- soilWaterModel(doy, outputs, waterStressSensitivity, irrigation, p,
+                         rootState, rootRate, rootDepthInitial, rootDepthMax, etR, waterStressFactor, fIntAct,
+                         et0,daysNoRain,fieldCapacity, wiltingPoint, bulkDensity)
           
-          #3. Compute soil water content
-          wc1Function <- c1Content(irrigation,p,rootState,rootDepthMax,etR*waterStressFactor,
-                                   fIntAct,et0,
-                           daysNoRain,fieldCapacity ,wiltingPoint,bulkDensity,wc1mm)
+          trc1 <- soilModel[[1]]
+          ev1 <- soilModel[[2]]
+          dc1 <- soilModel[[3]]
+          wc1mm <- soilModel[[4]]
+          wc1 <- soilModel[[5]]
+          trc2 <- soilModel[[6]]
+          dc2 <- soilModel[[7]]
+          wc2mm <- soilModel[[8]]
+          newSoil <- soilModel[[9]]
+          wc2 <- soilModel[[10]]
+          dc3 <- soilModel[[11]]
+          wc3mm <- soilModel[[12]]
+          wc3 <- soilModel[[13]]
           
-          #4. Update variables
-          trc1<-wc1Function[[1]]
-          ev1<-wc1Function[[2]]
-          dc1<-wc1Function[[3]]
-          wc1mm<-wc1Function[[4]]
-          wc1<-wc1Function[[5]]
-
           
-          ## Compute soil water content at layer 2 (rootDepth - 3)----
-          #1. Compute soil water content
-          wc2Function <- c2Content(dc1,rootRate,rootState,rootDepthMax,etR*waterStressFactor,
-                                   fIntAct,et0,fieldCapacity ,wiltingPoint,bulkDensity,wc2mm,wc3mm)
-          #2. Update variables
-          trc2<-wc2Function[[1]]
-          dc2<-wc2Function[[2]]
-          wc2mm<-wc2Function[[3]]
-          newSoil<-wc2Function[[4]]
-          wc2<-wc2Function[[5]]
-          
-          ## Compute soil water content at layer 3-unrooted zone (rootDepthMax - rootDepth)----
-          #1. Compute soil water content
-          wc3Function<-c3Content(dc2,rootState,rootDepthMax,
-                                 fieldCapacity,wiltingPoint,bulkDensity,newSoil,wc3mm)
-          #2. Update variables
-          dc3<-wc3Function[[1]]
-          wc3mm<-wc3Function[[2]]
-          wc3<-wc3Function[[3]]
-
-          
-          ## Compute water stress ----
-          #1. Potential total water content at layer 1 and 2
-          pwc1 <- 3 * (fieldCapacity )*bulkDensity*10
-          pwc2  <- (rootState-3)* (fieldCapacity )*bulkDensity*10
-          #2. water stress
+          #2. water stress TODO CHECK THE WEIGHTED AVERAGE
           wsAve = (wc1 + wc2)*.5
+          
+          if (rootState>3)
+          {
+            wsAve = (wc1*3 + wc2 * (rootState-3))/(rootState)
+          }
+          else
+          {
+            wsAve = wc1
+          }
+            
           ws <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint ) 
           if(ws>1) {ws<-1}
         
@@ -530,6 +504,8 @@ cumba <- function(weather, param, estimateRad=T, estimateET0=T,
   #return the output dataframe
   return(dfOut)
 }
+
+
 
 ### MODEL FUNCTION   ###########################################################
   ## Abiotic stresses ----
@@ -665,6 +641,79 @@ rootDepth<-function(rootIncrease,fTemp)
 }
 
 ## Water availability ----
+#main function for soil water content
+soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,rootState,rootRate,
+                           rootDepthInitial,rootDepthMax,etR, waterStressFactor,
+                           fIntAct,et0,
+                           daysNoRain,fieldCapacity,
+                           wiltingPoint,bulkDensity)
+{
+  #2. Compute water stress factor from water stress of previous day
+  if(length(outputs)>0) #check if it is the first day
+  {
+    wc1mm<-outputs[[as.character(doy-1)]][['wc1mm']]
+    wc2mm<-outputs[[as.character(doy-1)]][['wc2mm']]
+    wc3mm <-outputs[[as.character(doy-1)]][['wc3mm']]
+    ftsw <- outputs[[as.character(doy-1)]][['waterStress']]
+  }
+  else
+  {
+    aveSWC = (fieldCapacity+wiltingPoint)*.5
+    ftsw<-1
+    wc1mm<-(3)*bulkDensity*aveSWC *10
+    wc2mm<-(rootDepthInitial)*bulkDensity*aveSWC *10
+    wc3mm<-(rootDepthMax-rootDepthInitial)*bulkDensity*aveSWC*10
+  }
+  
+  waterStressFactor<-waterStressFunction(ftsw,waterStressSensitivity)
+  
+  #3. Compute soil water content
+  wc1Function <- c1Content(irrigation,p,rootState,rootDepthMax,etR*waterStressFactor,
+                           fIntAct,et0,
+                           daysNoRain,fieldCapacity ,wiltingPoint,bulkDensity,wc1mm)
+  
+  #4. Update variables
+  trc1<-wc1Function[[1]]
+  ev1<-wc1Function[[2]]
+  dc1<-wc1Function[[3]]
+  wc1mm<-wc1Function[[4]]
+  wc1<-wc1Function[[5]]
+  
+  
+  ## Compute soil water content at layer 2 (rootDepth - 3)----
+  #1. Compute soil water content
+  wc2Function <- c2Content(dc1,rootRate,rootState,rootDepthMax,etR*waterStressFactor,
+                           fIntAct,et0,fieldCapacity ,wiltingPoint,bulkDensity,wc2mm,wc3mm)
+  #2. Update variables
+  trc2<-wc2Function[[1]]
+  dc2<-wc2Function[[2]]
+  wc2mm<-wc2Function[[3]]
+  newSoil<-wc2Function[[4]]
+  wc2<-wc2Function[[5]]
+  
+  ## Compute soil water content at layer 3-unrooted zone (rootDepthMax - rootDepth)----
+  #1. Compute soil water content
+  wc3Function<-c3Content(dc2,rootState,rootDepthMax,
+                         fieldCapacity,wiltingPoint,bulkDensity,newSoil,wc3mm)
+  #2. Update variables
+  dc3<-wc3Function[[1]]
+  wc3mm<-wc3Function[[2]]
+  wc3<-wc3Function[[3]]
+  
+  
+  ## Compute water stress ----
+  #1. Potential total water content at layer 1 and 2
+  pwc1 <- 3 * (fieldCapacity )*bulkDensity*10
+  pwc2  <- (rootState-3)* (fieldCapacity )*bulkDensity*10
+  
+  
+  return(list(trc1,ev1,dc1,wc1mm,wc1,
+              trc2,dc2,wc2mm,newSoil,wc2,
+              dc3,wc3mm,wc3))
+  
+}
+
+
 # Water content at layer 1----
 #' @keywords internal 
 c1Content <- function(irrigation, p, rootState,rootDepthMax,
@@ -712,11 +761,11 @@ c1Content <- function(irrigation, p, rootState,rootDepthMax,
 c2Content <- function(dc1, rootRate, rootState,rootDepthMax, 
                       etR, fInt,et0,fieldCapacity ,wiltingPoint,bulkDensity, wc2mm, wc3mm)
 {
-  trc2<-0
+  trc2 <- 0
   
-  trc2<-etR* (1-(3/rootState))
+  trc2 <- etR * (1-(3/rootState))
   
-  newSoil<-rootRate*wc3mm/rootDepthMax
+  newSoil <- rootRate*wc3mm/rootDepthMax
   
 
   swcMax <- (rootState-3)*bulkDensity*fieldCapacity *10 #in mm 
