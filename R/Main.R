@@ -11,31 +11,25 @@
 #' @export
 cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrigation_df)
 {
-  #opening message
   cat(crayon::red("                       _      __   \n"))
   cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
-  cat(crayon::red("  / __| | | | '_ ` _ \\| '_ \\ / _` |\n"))
-  cat(crayon::red(" | (__| |_| | | | | | | |_) | (_| |\n"))
   cat(crayon::red("  \\___|\\__,_|_| |_| |_|_.__/ \\__,_|\n"))
   cat(crayon::red("                                   \n"))
   
   #message on runner modality
-  cat(crayon::blue(paste("running in experiment mode")))
+  cat(crayon::blue(paste("running in experiment mode","\n")))
   
   # Check if required columns exist in weather data frame
   required_columns <- c("Site", "Tx", "Tn", "P", "DATE")
-  if (estimateRad) {
-    required_columns <- c(required_columns, "Lat")
-  } else {
-    required_columns <- c(required_columns, "Rad")
-  }
-  if (!estimateET0) {
-    required_columns <- c(required_columns, "ET0")
-  }
+  #Radiation
+  if (estimateRad) {required_columns <- c(required_columns, "Lat")
+  } else {required_columns <- c(required_columns, "Rad")}
+  #ET0
+  if (!estimateET0) {required_columns <- c(required_columns, "ET0")}
+  
   missing_columns <- setdiff(required_columns, colnames(weather))
-  if (length(missing_columns) > 0) {
-    stop(crayon::red(paste("Missing required columns in 'weather':", paste(missing_columns, collapse = ", "))))
-  }
+  
+  if (length(missing_columns) > 0) {stop(crayon::red(paste("Missing required columns in 'weather':", paste(missing_columns, collapse = ", "))))}
   
   #get columns by name
   colNames <- colnames(weather)
@@ -46,28 +40,17 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   RadColID<-0
   Lat <- 0
   
-  if(estimateRad == F)
-  {
-    RadColID <- which(colnames(weather)=='Rad')
-  }else
-  {
-    LatColID <- which(colnames(weather)=='Lat')
-  }
+  if(estimateRad == F){RadColID <- which(colnames(weather)=='Rad')}
+  else{LatColID <- which(colnames(weather)=='Lat')}
   
   ET0ColID<-0
-  if(estimateET0 == F)
-  {
-    ET0ColID<-which(colnames(weather)=="ET0")
-  }
+  if(estimateET0 == F){ET0ColID<-which(colnames(weather)=="ET0")}
 
  
     # Check if required columns exist in irrigation_df data frame
     required_irrigation_columns <- c("ID", "Site", "YEAR", "DATE", "WVOL")
     missing_irrigation_columns <- setdiff(required_irrigation_columns, colnames(irrigation_df))
-    if (length(missing_irrigation_columns) > 0) {
-      stop(paste("Missing required columns in 'irrigation_df':", 
-                 paste(missing_irrigation_columns, collapse = ", ")))}
-  
+  if(length(missing_irrigation_columns) > 0) {stop(paste("Missing required columns in 'irrigation_df':", paste(missing_irrigation_columns, collapse = ", ")))}
   
   # Initialize a counter for time----
   startTime <- Sys.time()
@@ -76,24 +59,19 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   sites<-unlist(as.vector(unique(weather[,SiteColID]))) 
   
   # Check if param list contains all required elements
-  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax")
-  missing_param_elements <- setdiff(required_param_elements, names(param))
-  if (length(missing_param_elements) > 0) {
-    stop(crayon::red(paste("Missing required elements in 'param':", paste(missing_param_elements, collapse = ", "))))
-  }
+  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax","k0")
   
+  missing_param_elements <- setdiff(required_param_elements, names(param))
+  if (length(missing_param_elements) > 0) {stop(crayon::red(paste("Missing required elements in 'param':", paste(missing_param_elements, collapse = ", "))))}
   
   #Check Plant cardinal temperature
   if (param$Tmax < param$Topt || param$Tmax < param$Tbase || param$Topt < param$Tbase) {
     stop(crayon::red(paste("Alert: Please ensure that tMax is higher than tOpt, 
                 and/or tMax is higher than tBase, 
-                and/or tOpt is higher than tBase!\n"))) 
-    } 
+                and/or tOpt is higher than tBase!\n")))} 
   
   #Check Soil hydrologic properties
-  if (param$FieldCapacity < param$WiltingPoint)  {
-    stop(crayon::red(paste("Alert: Please ensure that field capacity is higher than wilting point!\n")))
-  }
+  if (param$FieldCapacity < param$WiltingPoint)  {stop(crayon::red(paste("Alert: Please ensure that field capacity is higher than wilting point!\n")))}
   
   #Extract parameters from the input parameter list 'param'----
   tBase<-param$Tbase
@@ -120,13 +98,12 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   waterStressSensitivity<- - param$WaterStressSensitivity
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
+  k0<-param$k0
  
-  
   #compute maximum value of the double logistic for flowering
   x<-seq(0:100)
   floweringPotentialFunction<-sapply(x, floweringDynamics, floweringSlope=floweringSlope,       floweringLag=floweringLag, floweringMax=floweringMax)
   floweringPotentialSum<-sum(floweringPotentialFunction)
-  
   
   #Define the output vector with column names for the results dataframe ----
   outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',#8
@@ -143,7 +120,9 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
                 'carbonStatePot','carbonRateAct','carbonStateAct',#41
                 'floweringRateIde','floweringStateIde',
                 'floweringRateAct','floweringStateAct','cycleCompletion',#46
-                'fruitSetCoefficient','fruitsStateIde','fruitsStatePot','fruitsStateAct')#49
+                'fruitSetCoefficient','fruitsStateIde',
+                'fruitsStatePot','fruitsStateAct',
+                'kt',"carbonSugarRate","carbonSugarState")#49
   
  #Initialize lists to store outputs at different levels (years, experiments, sites)----
   outputs<-list()
@@ -155,26 +134,28 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   #TODO: only debug
   site<-1
   ids <- unique(irrigation_df$ID)
+  
+  # Progress bar setup
+  total_iterations <- length(unique(irrigation_df$ID)) # Estimated total
+  
+  # constant for BRIX model
+  gammaCarbon<-.44
+  gammaSugar<-.42
+  
   for(site in 1:length(sites))
   {
-    
     #the ids
-      ids <- irrigation_df |> filter(Site == sites[site])
-    
-   
+    ids <- irrigation_df |> filter(Site == sites[site])
+    #this site
     thisSite<-sites[site][[1]]
-
     # Subset the weather data for the current site
     dfSite <- weather[weather$Site == thisSite, ]
-    
     # Add 'year' and 'doy' columns to the weather data
     dfSite$year<-lubridate::year(dfSite$DATE)
     YearColID<-which(colnames(dfSite) == "year")
     dfSite$doy<-lubridate::yday(dfSite$DATE)
     DOYColID<-which(colnames(dfSite) == "doy")
-
     ##Iterate through each year  ----    
-        
     # List of unique years for the current site
     years<-unlist(as.vector(unique(dfSite[,"year"]))) 
 
@@ -182,14 +163,13 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
     year<-1
     for(year in 1:length(years))
     {
-     
       idsYear <- ids |> filter(YEAR == years[[year]])
      
       #Iterate through each experiment in the current year ----    
       #TODO: for debug
       experiment<-1
       outputsExperiment <-list() #clean the list each experiment
-        
+    
       for(experiment in 1:length(unique(idsYear$ID)))
       {
         # Filter the irrigation data for the current experiment
@@ -204,6 +184,8 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
         fruitsStatePot<-0
         fruitsStateAct<-0
         fruitsStateIde<-0
+        carbonSugarRate<-0
+        carbonSugarState<-0
         rootState<-rootDepthInitial
         daysNoRain<-0
         ws<-1
@@ -223,17 +205,10 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           # Current date being processed
           date<-(dfYear[day,1])[[1]]
           
-          #if irrigations are provided
-         
-            # Filter the irrigation data (mm) for the current date
-            irrigationFilter<- thisExperiment |> 
-              filter(DATE==date)
-            irrigation<-0
-            if(nrow(irrigationFilter)==1)
-            {
-              irrigation <- irrigationFilter$WVOL
-            }
-         
+          # Filter the irrigation data (mm) for the current date
+          irrigationFilter<- thisExperiment |> filter(DATE==date)
+          irrigation<-0
+          if(nrow(irrigationFilter)==1){irrigation <- irrigationFilter$WVOL}
           
           # Extract weather data for the current day
           tX <- round(as.numeric(dfYear[day,TxColID]),2) #Maximum temperature, °C
@@ -241,23 +216,24 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           doy <- dfYear[day,DOYColID][[1]] #Day of the year
           tAve<-(tX+tN)*0.5 #Maximum temperature, °C
           p<-as.numeric(dfYear[day,PColID]) #Precipitation, mm
+          #radiation
           radSim<-0
-          if(estimateRad == T)
-          {
-            Lat <- round(as.numeric(dfYear[day,LatColID]),2)
+          Lat <- round(as.numeric(dfYear[day,LatColID]),2)
+          if(estimateRad == T){
             radSim <- radiationCompute(Lat,doy,tX,tN) #Simulated radiation, MJ m-2 d-1
-          }else
-          {
+          }
+          else{
             radSim <- round(as.numeric(dfYear[day,RadColID]),2) #Radiation, MJ m-2 d-1
           }
+          
+          #ET0
           et0<-0
-          if(estimateET0 == T)
-          {
-            et0<-0.008*(tAve+17.78)*radSim #Evapotranspiration-Hargreaves method, mm d-1
-          }else
-          {
-            et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #Evapotranspiration, mm d-1
+          if(estimateET0 == T){
+            et0<-0.008*(tAve+17.78)*radSim #ET0-Hargreaves method, mm d-1
+          }else{
+            et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #ET0, mm d-1
           }
+          
           #compute gdd
           gdd<-gdd(tAve,tBase,tOpt,tMax) #Growing degree day
           gddRate <- round(gdd*(tOpt-tBase),2) #Growing degree day rate
@@ -270,10 +246,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
                               rootState+rootRate,rootDepthMax) #Root depth state (cm)
           
           #if root state higher than the max, the root rate is 0
-          if(rootState>rootDepthMax)
-          {
-            rootRate<-0
-          }
+          if(rootState>rootDepthMax){rootRate<-0}
           
           ## Determine phenological phase ----
           phenoTemp<-phenoPhases(gddState,cycleLength,transplantingLag,floweringLag)
@@ -290,13 +263,11 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           fIntPot<-fIntCompute(fIntMax,cycleLength,transplantingLag,halfIntGrowth,
                                halfIntSenescence,initialInt,gddState)
           
-          if(length(outputs)>0 & phenoCode>=1)
-          { 
+          if(length(outputs)>0 & phenoCode>=1){ 
             fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
             fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
             fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntActRate
-          }else
-          {
+          }else{
             fIntPotRate = fIntPot
             fIntActRate = fIntPot
             fIntAct = fIntPot
@@ -317,10 +288,12 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           }
           
           #compute soil water dynamics
-          soilModel <- soilWaterModel(doy, outputs, waterStressSensitivity, irrigation, p,
-                         rootState, rootRate, rootDepthInitial, rootDepthMax, etR, waterStressFactor, fIntAct,
+          soilModel <- soilWaterModel(doy, outputs, 
+                                      waterStressSensitivity, irrigation, p,
+                         rootState, rootRate, rootDepthInitial, rootDepthMax, etR,
+                         waterStressFactor, fIntAct,
                          et0,daysNoRain,fieldCapacity, wiltingPoint, bulkDensity)
-          
+          #assign local variables
           trc1 <- soilModel[[1]]
           ev1 <- soilModel[[2]]
           dc1 <- soilModel[[3]]
@@ -335,47 +308,36 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           wc3mm <- soilModel[[12]]
           wc3 <- soilModel[[13]]
           
-          
-          #2. water stress TODO CHECK THE WEIGHTED AVERAGE
-          wsAve = (wc1 + wc2)*.5
-          
-          if (rootState>3)
-          {
+          if (rootState>3){
             wsAve = (wc1*3 + wc2 * (rootState-3))/(rootState)
-          }
-          else
+          }else
           {
             wsAve = wc1
           }
-            
+          
+          #water stress
           ws <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint ) 
           if(ws>1) {ws<-1}
         
-            
-
-          ## Compute carbon rates and update the carbon states (potential and actual)----
+          ## Compute carbon rates and update carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
-          carbonRatePot <- carbonRate(rue,radSim,gdd,fIntPot,hs,cs,1) #only heat and cold stress
+          carbonRatePot <- carbonRate(rue,radSim,gdd,fIntPot,hs,cs,1) #heat/cold stress
           carbonRateAct <- carbonRate(rue,radSim,gdd,fIntAct,hs,cs,ws)
           # daily integration
           carbonStateIde <- carbonStateIde + carbonRateIde
           carbonStatePot<-carbonStatePot + carbonRatePot
           carbonStateAct<-carbonStateAct + carbonRateAct
           
-         
-          ## Compute flowering rates and update the flowering states (potential and actual) ----
-          if(cycleCompletion>=floweringLag)
-          {
+          ## Compute flowering rates and update flowering states (potential and actual) 
+          if(cycleCompletion>=floweringLag){
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
             floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
                                     outputs[[as.character(doy-1)]][['floweringStateIde']]) 
-            
             floweringRateAct <-floweringRateIde*(1-hs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
                                      outputs[[as.character(doy-1)]][['floweringStateAct']])  
-          }else
-          {
+          }else{
             floweringRateIde<-0
             floweringStateIde<-0
             floweringRateAct<-0
@@ -385,12 +347,11 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           ## compute fruit set coefficient
           fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
           
-          #compute partitioning to fruits
+          ## compute partitioning to fruits
           fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
-          if(cycleCompletion>=floweringLag)
-          {
+          if(cycleCompletion>=floweringLag){
             fruitsRateIde <- carbonRateIde
             fruitsRatePot<-carbonRatePot * fruitSetCoefficient
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
@@ -398,39 +359,57 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           
           if(length(outputs)>0) #check if it is the first day
           {
-            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']] #47
-            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']] #47
+            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']]
+            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']]
             fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
+            #for BRIX
+            carbonSugarState_1<-outputs[[as.character(doy-1)]][['carbonSugarState']]
+          }
+          else
+          {
+            carbonSugarState_1<-0
+            fruitsStateAct<-0
           }
           
-          outputs[[as.character(doy)]]<-setNames(
-            list(
-              thisSite, thisYear, thisId, doy, tX, tN, p, irrigation, # 8
-              gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, # 14
-              trc1, ev1, dc1, wc1mm, daysNoRain, # 19
-              trc2, dc2, wc2mm, # 22
-              dc3, wc3mm, # 24
-              wc1, wc2, wc3, # 27
-              ws, # Assuming ws maps to 'waterStress', # 28
-              hs, cs, fIntPot, fIntAct, # 33
-              kc, et0, etR, # 36
-              radSim, # 37
-              carbonRateIde,carbonStateIde,carbonRatePot, carbonStatePot, carbonRateAct, carbonStateAct, # 41
-              floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct, # 45
-              cycleCompletion, # 46
-              fruitSetCoefficient, fruitsStateIde, fruitsStatePot, fruitsStateAct # 49
-            ), 
-            outputNames)
+          #BRIX
+          Brix <- BRIX_model(k0,fruitsRateAct,fruitsStateAct,
+                             Lat,doy,carbonSugarState_1,
+                             gammaCarbon,gammaSugar)
+          
+          kt_aux<-Brix[[1]]
+          carbonSugarRate<-Brix[[2]]
+          carbonSugarState<-Brix[[3]]
+          
+          
+          outputs[[as.character(doy)]]<-setNames(list(
+              thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
+              gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, 
+              trc1, ev1, dc1, wc1mm, daysNoRain, 
+              trc2, dc2, wc2mm, 
+              dc3, wc3mm,
+              wc1, wc2, wc3, 
+              ws, # Assuming ws maps to 'waterStress',
+              hs, cs, fIntPot, fIntAct, 
+              kc, et0, etR, radSim,
+              carbonRateIde,carbonStateIde,carbonRatePot, 
+              carbonStatePot, carbonRateAct, carbonStateAct,
+              floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct,
+              cycleCompletion,
+              fruitSetCoefficient, fruitsStateIde, fruitsStatePot, fruitsStateAct,
+              kt_aux,carbonSugarRate,carbonSugarState), 
+              outputNames)
         }
         ## Store the result in the outputs list ----     
         tempOutputs<-as.data.frame(t((matrix(unlist(outputs), 
                                              nrow=length(unlist(outputs[1]))))))
         names(tempOutputs) <- outputNames # Rename columns
         outputsExperiment[[as.character(thisId)]]<-tempOutputs
-        
-        cat(crayon::green(paste("experiment ", thisId, " in site ", 
-                                   thisSite, " and year ", thisYear, " executed\n")))#message to console
       }
+      
+      #message to console
+      cat(crayon::green(paste("\r","experiment ", thisId, " in site ", 
+                              thisSite, " and year ", thisYear, " executed")))
+      
       
       # Use do.call and rbind to bind rows into a single data frame
       tempOutputsExperiment <- do.call(rbind, outputsExperiment)
@@ -441,7 +420,8 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
     }
     outputsAll[[as.character(thisSite)]]<-outputsYear
   }
-
+  
+  
   # Flatten the output list
   flattenList <- unlist(outputsAll, recursive = FALSE) # Flatten the list
   
@@ -459,8 +439,9 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   
   ## Print the execution time ---- 
   endTime <- Sys.time()
-  elapsedTime <- endTime - startTime
-  print(paste("Elapsed time:", elapsedTime))
+  elapsedTime <- round(endTime - startTime,1)
+  cat("\nElapsed time:", elapsedTime, "\n")
+  
   rownames(dfOut) <- NULL
   #return the output dataframe
   return(dfOut)
@@ -865,6 +846,10 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
           }
           
+          #Brix model
+          
+          
+          
           outputs[[as.character(doy)]]<-setNames(
             list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation, # 8
@@ -1063,10 +1048,9 @@ rootDepth<-function(rootIncrease,fTemp)
 
 ## Water availability ----
 #main function for soil water content
-soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,rootState,rootRate,
-                           rootDepthInitial,rootDepthMax,etR, waterStressFactor,
-                           fIntAct,et0,
-                           daysNoRain,fieldCapacity,
+soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,rootState,
+                           rootRate,rootDepthInitial,rootDepthMax,etR, waterStressFactor,
+                           fIntAct,et0,daysNoRain,fieldCapacity,
                            wiltingPoint,bulkDensity)
 {
   #2. Compute water stress factor from water stress of previous day
@@ -1295,9 +1279,138 @@ floweringDynamics<-function(cycleCompletion, floweringLag, floweringSlope,flower
     flowering <- min(logGrowth, logDecline)
   }
   
-  
-  
   return(flowering)
 }
 
+#BRIX
+#' @keywords internal
+BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_1,
+                     gammaCarbon,gammaSugar)
+{
+  if(dm_rate>0)
+  {
+    kt_aux <- kt_function(k0,dm_rate,dm_state)
+    dayLength<-as.integer(photoperiod(doy,latitude))
+  
+    carbonSugarFunction<-carbonSugar(kt_aux,dm_rate,dm_state,dayLength,carbonSugar_1,
+                                     gammaCarbon,gammaSugar)
+    carbonSugarRate<-carbonSugarFunction[[1]]
+    carbonSugarState<-carbonSugarFunction[[2]]
+  }
+  else
+  {
+    kt_aux<-0
+    carbonSugarRate<-0
+    carbonSugarState<-0
+    
+  }
+  return(list(kt_aux,carbonSugarRate,carbonSugarState))
+}
+
+#' @keywords internal
+kt_function<-function(k0,dm_rate,dm_state)
+{
+  kt<-k0*(dm_rate*1/dm_state)^1.36
+  return(kt)
+}
+
+#' @keywords internal
+carbonSugar<-function(kt,dm_rate,dm_state,dayLength,carbonSugar_1,
+                      gammaCarbon,gammaSugar)
+{
+  if(kt>0.025) #HOURLY LOOP
+  {
+    DM_rate_lightHours = dm_rate/as.integer(dayLength)
+    hourSunrise <- as.integer((24- dayLength)/2)
+    hourSunset <- hourSunrise + dayLength  # End point of light
+    # Create DMrate_h with exactly 24 hours
+    DMrate_h <- rep(0, 24)  # Initialize DMrate_h with zeros
+    # Fill in the light hours in the correct indices
+    DMrate_h[(hourSunrise + 1):hourSunset] <- DM_rate_lightHours
+    #hourly loop
+    hour<-1
+    #create an empty array
+    carbonSugarState_h<-c(rep(0,24))
+    #local variable to store the state variable of the previous time step (hour)
+    carbonSugarState_hour<-0
+    carbonSugarRate_in_hour<-0
+    carbonSugarRate_out_hour<-0
+    hour<-1
+    #BEGIN HOURLY LOOP
+    for(hour in 1:24)
+    {
+      #to manage the change of day
+      if(hour == 1){#assign to the first hour the value of the last hour of the previous day 
+        carbonSugarState_hour = carbonSugarState_h[[24]]
+      }else {#otherwise assign the value of the previous hour
+        carbonSugarState_hour = carbonSugarState_h[[hour-1]]}
+      
+      #define the carbon flow from the phloem - gC m-2 h-1
+      if(is.na(DMrate_h[hour])){cat(paste('ECCO!!!',hour,DMrate_h))}
+      carbonSugarRate_in <- DMrate_h[hour] * gammaCarbon
+      #define the carbon used to synthesize other compounds scaled to hourly - gC m-2 h-1
+      carbonSugarRate_out <- carbonSugarState_hour * kt * 1/24 
+      #compute the carbon rate in sugar gC d-1
+      carbonSugarRate <- carbonSugarRate_in - carbonSugarRate_out 
+      # integrate the state variable of carbon in sugar - gC m-2 h-1
+      carbonSugarState_h[[hour]] <- carbonSugarState_hour + carbonSugarRate
+
+      if(carbonSugarState_h[[hour]]<0){
+        carbonSugarState_h[[hour]]=0}
+      carbonSugarRate_in_hour<-carbonSugarRate_in_hour+carbonSugarRate_in
+      carbonSugarRate_out_hour<-carbonSugarRate_out_hour+carbonSugarRate_out
+    }
+    
+    #END HOURLY LOOP
+    carbonSugarRateDay <- carbonSugarRate_in_hour-carbonSugarRate_out_hour
+    #assign the variable
+    carbonSugarStateDay <- carbonSugar_1 + carbonSugarState_h[[24]]  }
+  else
+  {
+    #define the carbon flow from the phloem - gC m-2 d-1
+    carbonSugarRate_in <- dm_rate * gammaCarbon
+    #define the carbon used to synthesize other compounds - gC m-2 d-1
+    carbonSugarState_d <- carbonSugar_1
+    carbonSugarRate_out <- carbonSugarState_d * kt	
+    #compute the carbon rate in sugar gC d-1
+    carbonSugarRateDay <- carbonSugarRate_in - carbonSugarRate_out 
+    # integrate the state variable of carbon in sugar - gC m-2 d-1
+    carbonSugarStateDay <- carbonSugar_1 + carbonSugarRateDay
+  }
+  return(list(carbonSugarRateDay,carbonSugarStateDay))
+}
+
+#' @keywords internal
+# Function to compute photoperiod
+photoperiod <- function(doy, latitude) {
+  # Ensure latitude is within valid range
+  if (latitude < -90 || latitude > 90) {
+    stop("Latitude must be between -90 and 90 degrees.")
+  }
+  
+  # Convert latitude to radians
+  lat_rad <- latitude * (pi / 180)
+  # Calculate declination angle (in radians)
+  declination <- 23.44 * sin((360 / 365) * (doy - 81) * (pi / 180)) * (pi / 180)
+  
+  # Calculate the photoperiod in hours
+  # Formula derived from the spherical law of cosines
+  cos_omega <- -tan(lat_rad) * tan(declination)
+  
+  # Check if cos_omega is valid
+  if (cos_omega < -1 || cos_omega > 1) {
+    # Polar day or night
+    if (latitude > 0) {
+      return(ifelse(doy < 172, 24, 0))  # Northern Hemisphere
+    } else {
+      return(ifelse(doy < 172, 0, 24))  # Southern Hemisphere
+    }
+  }
+  # Calculate the hour angle
+  omega <- acos(cos_omega)
+  # Convert to photoperiod in hours
+  photoperiod_hours <- (2 * omega) * (12 / pi)  # converting radians to hours
+  
+  return(photoperiod_hours)
+}
 

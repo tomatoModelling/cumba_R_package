@@ -16,10 +16,14 @@ KcIni,0.1,0.05,0.15,test
 KcMax,1.5,0.75,1.5,test
 RootIncrease,1,0.5,1.5,test
 RootDepthMax,60,50,100,test
-RootDepthInitial,4,2,6,test
+RootDepthInitial,60,2,6,test
 FieldCapacity,0.3,0.2,0.45,test
 WiltingPoint,0.1,0.05,0.15,test
 BulkDensity,1.2,0.6,1.8,test
 WaterStressSensitivity,3,0.5,4.5,test
 FloweringSlope,0.4,0.2,0.6,test
 FloweringMax,80,40,90,test
+k0,4,2,5,test
+FruitWaterContentMin,0.8,0.7,0.85,test
+FruitWaterContentMax,0.95,0.88,0.98,test
+FruitWaterContentInc,0.01,0.005,0.015,test

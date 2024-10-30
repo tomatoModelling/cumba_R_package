@@ -55,6 +55,8 @@ source("..//R//Main.R")
 outputs<-cumba_experiment(weather, param, estimateRad = T,estimateET0 = T,
               irrigation_df)   
 
+
+write.csv(outputs,"testBrix3.csv")
 #call the cumba function
 outputs<-cumba_scenario(weather, param, estimateRad = T,estimateET0 = T,
                         waterStressLevel=.2, minimumTurn = 10)  
@@ -74,18 +76,18 @@ outputs_ref<-outputs |>
   left_join(yieldPlot,by=c('experiment'='ID','doy'='doy'))
 
 ggplot(outputs_ref  )+
-  geom_area(aes(x=doy,y=floweringRateIde*40),col='black',alpha=0.5)+
-  geom_area(aes(x=doy,y=floweringRateAct*40),col='red',alpha=0.5)+
+  #geom_area(aes(x=doy,y=floweringRateIde),col='black',alpha=0.5)+
+  #geom_area(aes(x=doy,y=floweringRateAct),col='red',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStatePot*10),col='black',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStateAct*10),col='red',alpha=0.5)+
   #geom_line(aes(x=doy,y=fruitSetCoefficient),col='black',alpha=0.5)+
-  geom_line(aes(x=doy,y=fruitsStatePot*.01),col='black',alpha=1,linetype=2,size=1)+
-  geom_line(aes(x=doy,y=fruitsStateIde*.01),col='blue',alpha=1,size=1)+
-  geom_line(aes(x=doy,y=fruitsStateAct*.01),col='red',alpha=1,size=1)+
+  #geom_line(aes(x=doy,y=fruitsStatePot),col='black',alpha=1,linetype=2,size=1)+
+  #geom_line(aes(x=doy,y=fruitsStateIde),col='blue',alpha=1,size=1)+
+  #geom_line(aes(x=doy,y=fruitsStateAct),col='red',alpha=1,size=1)+
   #geom_col(aes(x=doy,y=heatStress*10,fill=factor(phenoCode)),fill='red')+
   #geom_col(aes(x=doy,y=waterStress*10,fill=factor(phenoCode)),fill='blue')+
-  geom_line(aes(x=doy,y=fIntPot*20),size=2)+
-  geom_line(aes(x=doy,y=fIntAct*20),size=2,col='darkgreen')+
+  #geom_line(aes(x=doy,y=fIntPot*20),size=2)+
+  #geom_line(aes(x=doy,y=fIntAct*20),size=2,col='darkgreen')+
   geom_line(aes(x=doy,y=carbonRatePot))+
   geom_line(aes(x=doy,y=carbonRateIde),col='blue')+
   geom_line(aes(x=doy,y=carbonRateAct),col='darkred',size=2)+
