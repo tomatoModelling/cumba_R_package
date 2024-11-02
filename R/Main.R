@@ -1114,6 +1114,7 @@ fIntCompute<-function(fIntMax,cycleLength,
   
   return(fIntSim)
 }
+
 ## Carbon rate ----
 #' @keywords internal 
 carbonRate<-function(rue, radiation, fTemp, fInt, hs,cs,ws)
@@ -1129,7 +1130,6 @@ rootDepth<-function(rootIncrease,fTemp)
 {
   rootDepth <- fTemp*rootIncrease
 }
-
 ## Water availability ----
 #main function for soil water content
 soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,rootState,
@@ -1349,7 +1349,7 @@ radiationCompute<-function(latitude, doy, tMax, tMin)
   return(rs)
 }
 
-#Flowering dynamics 
+#Flowering dynamics ----
 #' @keywords internal 
 floweringDynamics<-function(cycleCompletion, floweringLag, floweringSlope,floweringMax)
 {
@@ -1366,7 +1366,8 @@ floweringDynamics<-function(cycleCompletion, floweringLag, floweringSlope,flower
   return(flowering)
 }
 
-#BRIX
+
+#BRIX ----
 #' @keywords internal
 BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
                      gammaCarbon,gammaSugar,fruitWaterContentMin,fruitWaterContentMax,
