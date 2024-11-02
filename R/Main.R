@@ -274,6 +274,14 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
             fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
             fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
             fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntActRate
+            if(fIntAct<0)
+            {
+              fIntAct<-0
+            }
+            if(fIntPot<0)
+            {
+              fIntPot<-0
+            }
           }else{
             fIntPotRate = fIntPot
             fIntActRate = fIntPot
@@ -495,7 +503,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 #' @examples 
 #' @export
 cumba_scenario <- function(weather, param, estimateRad=T, 
-                           estimateET0=T,waterStressLevel=.5, minimumTurn = 4)
+                           estimateET0=T,transplantingDOY=120,waterStressLevel=.5, minimumTurn = 4)
 {
   #opening message
   cat(crayon::red("                       _      __   \n"))
@@ -712,9 +720,12 @@ cumba_scenario <- function(weather, param, estimateRad=T,
         outputs<-list() #clean the list each year
         for(day in 1:nrow(dfYear))
         {
+          doy <- dfYear[day,DOYColID][[1]] #Day of the year
           # Current date being processed
           date<-(dfYear[day,1])[[1]]
           
+          if(doy>=transplantingDOY && transplantingDOY+200)
+          {
           #run in scenario mode --> trigger irrigation based on conditions
             if(ws < waterStressLevel & daysNoRain>=minimumTurn-1)
             {
@@ -792,6 +803,14 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
             fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
             fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntActRate
+            if(fIntAct<0)
+            {
+              fIntAct<-0
+            }
+            if(fIntPot<0)
+            {
+              fIntPot<-0
+            }
           }else
           {
             fIntPotRate = fIntPot
@@ -952,6 +971,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             fruitFreshWeightPot,fruitFreshWeightAct,
             brixPot,brixAct), 
             outputNames)
+          }
         }
         ## Store the result in the outputs list ----     
         tempOutputs<-as.data.frame(t((matrix(unlist(outputs), 

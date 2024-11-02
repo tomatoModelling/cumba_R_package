@@ -51,30 +51,30 @@ weather<-weather |>
 
 source("..//R//Main.R")
 options(scipen = 999)
+##call the cumba function
+#outputs<-cumba_experiment(weather, param, 
+#                          estimateRad = T, estimateET0 = T,
+#                          irrigation_df)   
+#ggplot(outputs)+
+#  geom_line(aes(x=doy,y=brixPot))+
+#  geom_line(aes(x=doy,y=brixAct),col='blue')+
+#  geom_line(aes(x=doy,y=carbonSugarState/50),col='red')+
+#  geom_line(aes(x=doy,y=fruitWaterContentAct*2),col='cyan')+
+#  geom_line(aes(x=doy,y=fruitWaterContentPot*2),col='cyan4')+
+#  theme_bw()+
+#  xlim(160,240)+
+#  #ylim(param$FruitWaterContentMin,param$FruitWaterContentMax)+
+#  facet_wrap(~experiment,ncol=8)+
+#  theme(strip.background = element_blank(),
+#        strip.text.x = element_blank())
+#
+#
+#
+#
+#
+#write.csv(outputs,"testBrix3.csv")
 #call the cumba function
-outputs<-cumba_experiment(weather, param, 
-                          estimateRad = T, estimateET0 = T,
-                          irrigation_df)   
-ggplot(outputs)+
-  geom_line(aes(x=doy,y=brixPot))+
-  geom_line(aes(x=doy,y=brixAct),col='blue')+
-  geom_line(aes(x=doy,y=carbonSugarState/50),col='red')+
-  geom_line(aes(x=doy,y=fruitWaterContentAct*2),col='cyan')+
-  geom_line(aes(x=doy,y=fruitWaterContentPot*2),col='cyan4')+
-  theme_bw()+
-  xlim(160,240)+
-  #ylim(param$FruitWaterContentMin,param$FruitWaterContentMax)+
-  facet_wrap(~experiment,ncol=8)+
-  theme(strip.background = element_blank(),
-        strip.text.x = element_blank())
-
-
-
-
-
-write.csv(outputs,"testBrix3.csv")
-#call the cumba function
-outputs<-cumba_scenario(weather, param, estimateRad = T,estimateET0 = T,
+outputs<-cumba_scenario( weather, param, estimateRad = T,estimateET0 = T,120,
                         waterStressLevel=.2, minimumTurn = 10)  
 
 lastDay<-outputs |> 
