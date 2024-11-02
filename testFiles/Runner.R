@@ -50,10 +50,26 @@ weather<-weather |>
 #library(data.table)
 
 source("..//R//Main.R")
-
+options(scipen = 999)
 #call the cumba function
-outputs<-cumba_experiment(weather, param, estimateRad = T,estimateET0 = T,
-              irrigation_df)   
+outputs<-cumba_experiment(weather, param, 
+                          estimateRad = T, estimateET0 = T,
+                          irrigation_df)   
+ggplot(outputs)+
+  geom_line(aes(x=doy,y=brixPot))+
+  geom_line(aes(x=doy,y=brixAct),col='blue')+
+  geom_line(aes(x=doy,y=carbonSugarState/50),col='red')+
+  geom_line(aes(x=doy,y=fruitWaterContentAct*2),col='cyan')+
+  geom_line(aes(x=doy,y=fruitWaterContentPot*2),col='cyan4')+
+  theme_bw()+
+  xlim(160,240)+
+  #ylim(param$FruitWaterContentMin,param$FruitWaterContentMax)+
+  facet_wrap(~experiment,ncol=8)+
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank())
+
+
+
 
 
 write.csv(outputs,"testBrix3.csv")
@@ -69,13 +85,40 @@ lastDay<-outputs |>
 yieldPlot<-yield |> 
   group_by(ID) |> 
   summarise(yieldMean = mean(Y_TOT *.05*10),
-            yieldSD = sd(Y_TOT*.05*10)) |> 
-  left_join(lastDay,by=c('ID'='experiment'))
+            yieldSD = sd(Y_TOT*.05*10),
+            FWMean = mean(FW),
+            BRIX = mean(BRIX)) |> 
+  left_join(outputs,by=c('ID'='experiment'))
+
+
+lastDay<-yieldPlot |> 
+  group_by(ID) |> 
+  slice_tail() 
+
+ggplot(outputs)+
+  geom_line(aes(x=doy,y=brixPot))+
+  geom_line(aes(x=doy,y=brixAct),col='blue')+
+  geom_line(aes(x=doy,y=carbonSugarState/50),col='red')+
+  geom_line(aes(x=doy,y=fruitWaterContentAct),col='cyan')+
+  geom_line(aes(x=doy,y=fruitWaterContentPot),col='cyan4')+
+  theme_bw()+
+  xlim(160,240)+
+  #ylim(param$FruitWaterContentMin,param$FruitWaterContentMax)+
+  facet_wrap(~experiment,ncol=8)+
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank())
+
+
+ggplot(lastDay,aes(x=brixAct,y=BRIX))+
+  geom_point()+
+  geom_smooth(method='lm')
+
+
 
 outputs_ref<-outputs |> 
   left_join(yieldPlot,by=c('experiment'='ID','doy'='doy'))
 
-ggplot(outputs_ref  )+
+ggplot(outputs)+
   #geom_area(aes(x=doy,y=floweringRateIde),col='black',alpha=0.5)+
   #geom_area(aes(x=doy,y=floweringRateAct),col='red',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStatePot*10),col='black',alpha=0.5)+
@@ -103,7 +146,7 @@ ggplot(outputs_ref  )+
 
   ############## PLOT THE OUTPUT  ###############################################
 #ggplot(outputs |> filter(experiment == 1))+
-ggplot(outputs_ref)+
+ggplot(outputs)+
   #geom_area(aes(x=doy,y=floweringRatePot*1000),col='yellow',alpha=0.5)+
   #geom_area(aes(x=doy,y=floweringRateAct*1000),col='pink4',alpha=0.5)+
   #geom_line(aes(x=doy,y=floweringStatePot*100),col='yellow4',alpha=0.5)+
@@ -111,8 +154,8 @@ ggplot(outputs_ref)+
   #geom_line(aes(x=doy,y=fruitSetCoefficient),col='black',alpha=0.5)+
   #geom_line(aes(x=doy,y=fruitsStatePot*0.001),col='tomato',alpha=1,linetype=2,size=1)+
   geom_line(aes(x=doy,y=fruitsStateAct*0.001),col='tomato3',alpha=1,size=1)+
-  geom_point(aes(x=doy,y=yieldMean*0.001),col='tomato4',alpha=0.5)+
-  geom_errorbar(aes(x=doy,ymin=yieldMean*0.001-yieldSD*0.001,ymax=yieldMean*0.001+yieldSD*0.001),col='tomato4',alpha=0.5)+
+  #geom_point(aes(x=doy,y=yieldMean*0.001),col='tomato4',alpha=0.5)+
+  #geom_errorbar(aes(x=doy,ymin=yieldMean*0.001-yieldSD*0.001,ymax=yieldMean*0.001+yieldSD*0.001),col='tomato4',alpha=0.5)+
   
   #geom_line(aes(x=doy,y=0.4-rootState/250),size=.8)+
   #geom_line(aes(x=doy,y=TRC1),col='red')+

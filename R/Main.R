@@ -11,8 +11,11 @@
 #' @export
 cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrigation_df)
 {
+  #opening message
   cat(crayon::red("                       _      __   \n"))
   cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
+  cat(crayon::red("  / __| | | | '_ ` _ \\| '_ \\ / _` |\n"))
+  cat(crayon::red(" | (__| |_| | | | | | | |_) | (_| |\n"))
   cat(crayon::red("  \\___|\\__,_|_| |_| |_|_.__/ \\__,_|\n"))
   cat(crayon::red("                                   \n"))
   
@@ -59,7 +62,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   sites<-unlist(as.vector(unique(weather[,SiteColID]))) 
   
   # Check if param list contains all required elements
-  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax","k0")
+  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax","k0","FruitWaterContentMin","FruitWaterContentMax","FruitWaterContentInc","FruitWaterContentDecreaseMax")
   
   missing_param_elements <- setdiff(required_param_elements, names(param))
   if (length(missing_param_elements) > 0) {stop(crayon::red(paste("Missing required elements in 'param':", paste(missing_param_elements, collapse = ", "))))}
@@ -99,30 +102,34 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
   k0<-param$k0
- 
+  fruitWaterContentMin <- param$FruitWaterContentMin
+  fruitWaterContentMax <- param$FruitWaterContentMax
+  fruitWaterContentInc <- param$FruitWaterContentInc
+  fruitWaterContentDecreaseMax<-param$FruitWaterContentDecreaseMax
+  
   #compute maximum value of the double logistic for flowering
   x<-seq(0:100)
   floweringPotentialFunction<-sapply(x, floweringDynamics, floweringSlope=floweringSlope,       floweringLag=floweringLag, floweringMax=floweringMax)
   floweringPotentialSum<-sum(floweringPotentialFunction)
   
   #Define the output vector with column names for the results dataframe ----
-  outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',#8
-                'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',#14
-                'trc1','ev1','dc1','wc1mm','daysNoRain',#19
-                'trc2','dc2','wc2mm',#22
-                'dc3','wc3mm',#24
-                'wc1',"wc2","wc3",#27
-                'waterStress',#28
-                'heatStress','coldStress','fIntPot','fIntAct',#33
-                'kc','et0','etR',#36
-                'radiation',#37
+  outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
+                'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',
+                'trc1','ev1','dc1','wc1mm','daysNoRain',
+                'trc2','dc2','wc2mm','dc3','wc3mm','wc1',"wc2","wc3",
+                'waterStress','heatStress','coldStress','fIntPot','fIntAct',
+                'kc','et0','etR','radiation',
                 'carbonRateIde','carbonStateIde','carbonRatePot',
-                'carbonStatePot','carbonRateAct','carbonStateAct',#41
+                'carbonStatePot','carbonRateAct','carbonStateAct',
                 'floweringRateIde','floweringStateIde',
-                'floweringRateAct','floweringStateAct','cycleCompletion',#46
+                'floweringRateAct','floweringStateAct','cycleCompletion',
                 'fruitSetCoefficient','fruitsStateIde',
                 'fruitsStatePot','fruitsStateAct',
-                'kt',"carbonSugarRate","carbonSugarState")#49
+                'kt',"carbonSugarRate","carbonSugarState",
+                "fruitWaterContentPot","fruitWaterContentPotRate",
+                "fruitWaterContentSensitivity","fruitWaterContentAct",
+                "fruitFreshWeightPot","fruitFreshWeightAct",
+                "brixPot","brixAct")
   
  #Initialize lists to store outputs at different levels (years, experiments, sites)----
   outputs<-list()
@@ -328,7 +335,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           carbonStatePot<-carbonStatePot + carbonRatePot
           carbonStateAct<-carbonStateAct + carbonRateAct
           
-          ## Compute flowering rates and update flowering states (potential and actual) 
+          ## Compute flowering rates and update flowering states (potential and actual)---- 
           if(cycleCompletion>=floweringLag){
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
@@ -344,43 +351,66 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
             floweringStateAct<-0
           }
           
-          ## compute fruit set coefficient
           fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
           
-          ## compute partitioning to fruits
+          ### reinitialize states----
           fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
+          
+          ### check the phenological stage (only after flowering)----
           if(cycleCompletion>=floweringLag){
             fruitsRateIde <- carbonRateIde
             fruitsRatePot<-carbonRatePot * fruitSetCoefficient
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
           
-          if(length(outputs)>0) #check if it is the first day
+          ## Compute BRIX ----
+          
+          ### check if it is the first day----
+          if(length(outputs)>0) #
           {
             fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']]
             fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']]
             fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
             #for BRIX
             carbonSugarState_1<-outputs[[as.character(doy-1)]][['carbonSugarState']]
+            fruitWaterContentPot_y<-outputs[[as.character(doy-1)]][['fruitWaterContentPot']]
+            fruitWaterContentAct_y<-outputs[[as.character(doy-1)]][['fruitWaterContentAct']]
           }
           else
           {
             carbonSugarState_1<-0
             fruitsStateAct<-0
+            fruitWaterContentPot_y<-NA
+            fruitWaterContentAct_y<-NA
           }
           
-          #BRIX
+        
           Brix <- BRIX_model(k0,fruitsRateAct,fruitsStateAct,
                              Lat,doy,carbonSugarState_1,
-                             gammaCarbon,gammaSugar)
+                             gammaCarbon,gammaSugar,
+                             fruitWaterContentMin,
+                             fruitWaterContentMax,fruitWaterContentInc,
+                             cycleCompletion,floweringLag,
+                             fruitWaterContentPot_y,fruitWaterContentAct_y,
+                             fruitWaterContentDecreaseMax,ws)
           
+          ### pass function variables to local variables----  
           kt_aux<-Brix[[1]]
           carbonSugarRate<-Brix[[2]]
           carbonSugarState<-Brix[[3]]
+          fruitWaterContentPot<-Brix[[4]]
+          fruitWaterContentPotRate<-Brix[[5]]
+          fruitWaterContentSensitivity<-Brix[[6]]
+          fruitWaterContentAct<-Brix[[7]]
+          fruitFreshWeightPot<-Brix[[8]]
+          fruitFreshWeightAct<-Brix[[9]]
+          brixPot<-Brix[[10]]
+          brixAct<-Brix[[11]]
           
           
+          ## Populate output variables----
           outputs[[as.character(doy)]]<-setNames(list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
               gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, 
@@ -396,7 +426,11 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
               floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct,
               cycleCompletion,
               fruitSetCoefficient, fruitsStateIde, fruitsStatePot, fruitsStateAct,
-              kt_aux,carbonSugarRate,carbonSugarState), 
+              kt_aux,carbonSugarRate,carbonSugarState,
+              fruitWaterContentPot,fruitWaterContentPotRate,
+              fruitWaterContentSensitivity,fruitWaterContentAct,
+              fruitFreshWeightPot,fruitFreshWeightAct,
+              brixPot,brixAct), 
               outputNames)
         }
         ## Store the result in the outputs list ----     
@@ -521,7 +555,8 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   sites<-unlist(as.vector(unique(weather[,SiteColID]))) 
   
   # Check if param list contains all required elements
-  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax")
+  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax","k0","FruitWaterContentMin","FruitWaterContentMax","FruitWaterContentInc","FruitWaterContentDecreaseMax")
+  
   missing_param_elements <- setdiff(required_param_elements, names(param))
   if (length(missing_param_elements) > 0) {
     stop(crayon::red(paste("Missing required elements in 'param':", paste(missing_param_elements, collapse = ", "))))
@@ -565,6 +600,11 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   waterStressSensitivity<- - param$WaterStressSensitivity
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
+  k0<-param$k0
+  fruitWaterContentMin <- param$FruitWaterContentMin
+  fruitWaterContentMax <- param$FruitWaterContentMax
+  fruitWaterContentInc <- param$FruitWaterContentInc
+  fruitWaterContentDecreaseMax<-param$FruitWaterContentDecreaseMax
   
   
   #compute maximum value of the double logistic for flowering
@@ -574,19 +614,25 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   
   
   #Define the output vector with column names for the results dataframe ----
-  outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',#8
-                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',#14
-                 'trc1','ev1','dc1','wc1mm','daysNoRain',#19
-                 'trc2','dc2','wc2mm',#22
-                 'dc3','wc3mm',#24
-                 'wc1',"wc2","wc3",#27
-                 'waterStress',#28
-                 'heatStress','coldStress','fIntPot','fIntAct',#33
-                 'kc','et0','etR',#36
-                 'radiation',#37
-                 'carbonRateIde','carbonStateIde','carbonRatePot','carbonStatePot','carbonRateAct','carbonStateAct',#41
-                 'floweringRateIde','floweringStateIde','floweringRateAct','floweringStateAct','cycleCompletion',#46
-                 'fruitSetCoefficient','fruitsStateIde','fruitsStatePot','fruitsStateAct')#49
+  outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
+                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',
+                 'trc1','ev1','dc1','wc1mm','daysNoRain',
+                 'trc2','dc2','wc2mm','dc3','wc3mm','wc1',"wc2","wc3",
+                 'waterStress','heatStress','coldStress','fIntPot','fIntAct',
+                 'kc','et0','etR','radiation',
+                 'carbonRateIde','carbonStateIde','carbonRatePot',
+                 'carbonStatePot','carbonRateAct','carbonStateAct',
+                 'floweringRateIde','floweringStateIde',
+                 'floweringRateAct','floweringStateAct','cycleCompletion',
+                 'fruitSetCoefficient','fruitsStateIde',
+                 'fruitsStatePot','fruitsStateAct',
+                 'kt',"carbonSugarRate","carbonSugarState",
+                 "fruitWaterContentPot","fruitWaterContentPotRate",
+                 "fruitWaterContentSensitivity","fruitWaterContentAct",
+                 "fruitFreshWeightPot","fruitFreshWeightAct",
+                 "brixPot","brixAct")
+  
+  
   
   #Initialize lists to store outputs at different levels (years, experiments, sites)----
   outputs<-list()
@@ -598,6 +644,10 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   #TODO: only debug
   site<-1
   ids <- unique(irrigation_df$ID)
+  
+  # constant for BRIX model
+  gammaCarbon<-.44
+  gammaSugar<-.42
   for(site in 1:length(sites))
   {
    
@@ -806,67 +856,101 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           carbonStatePot<-carbonStatePot + carbonRatePot
           carbonStateAct<-carbonStateAct + carbonRateAct
           
-          ## Compute flowering rates and update the flowering states (potential and actual) ----
-          if(cycleCompletion>=floweringLag)
-          {
+           ## Compute flowering rates and update flowering states (potential and actual)---- 
+          if(cycleCompletion>=floweringLag){
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
             floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
                                     outputs[[as.character(doy-1)]][['floweringStateIde']]) 
-            
             floweringRateAct <-floweringRateIde*(1-hs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
                                      outputs[[as.character(doy-1)]][['floweringStateAct']])  
-          }else
-          {
+          }else{
             floweringRateIde<-0
             floweringStateIde<-0
             floweringRateAct<-0
             floweringStateAct<-0
           }
           
-          ## compute fruit set coefficient
           fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
           
-          #compute partitioning to fruits
+          ### reinitialize states----
           fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
-          if(cycleCompletion>=floweringLag)
-          {
+          
+          ### check the phenological stage (only after flowering)----
+          if(cycleCompletion>=floweringLag){
             fruitsRateIde <- carbonRateIde
             fruitsRatePot<-carbonRatePot * fruitSetCoefficient
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
+          ## Compute BRIX ----
           
-          if(length(outputs)>0) #check if it is the first day
+          ### check if it is the first day----
+          if(length(outputs)>0) #
           {
-            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']] #47
-            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']] #47
+            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']]
+            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']]
             fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
+            #for BRIX
+            carbonSugarState_1<-outputs[[as.character(doy-1)]][['carbonSugarState']]
+            fruitWaterContentPot_y<-outputs[[as.character(doy-1)]][['fruitWaterContentPot']]
+            fruitWaterContentAct_y<-outputs[[as.character(doy-1)]][['fruitWaterContentAct']]
+          }
+          else
+          {
+            carbonSugarState_1<-0
+            fruitsStateAct<-0
+            fruitWaterContentPot_y<-NA
+            fruitWaterContentAct_y<-NA
           }
           
-          #Brix model
+          
+          Brix <- BRIX_model(k0,fruitsRateAct,fruitsStateAct,
+                             Lat,doy,carbonSugarState_1,
+                             gammaCarbon,gammaSugar,
+                             fruitWaterContentMin,
+                             fruitWaterContentMax,fruitWaterContentInc,
+                             cycleCompletion,floweringLag,
+                             fruitWaterContentPot_y,fruitWaterContentAct_y,
+                             fruitWaterContentDecreaseMax,ws)
+          
+          ### pass function variables to local variables----  
+          kt_aux<-Brix[[1]]
+          carbonSugarRate<-Brix[[2]]
+          carbonSugarState<-Brix[[3]]
+          fruitWaterContentPot<-Brix[[4]]
+          fruitWaterContentPotRate<-Brix[[5]]
+          fruitWaterContentSensitivity<-Brix[[6]]
+          fruitWaterContentAct<-Brix[[7]]
+          fruitFreshWeightPot<-Brix[[8]]
+          fruitFreshWeightAct<-Brix[[9]]
+          brixPot<-Brix[[10]]
+          brixAct<-Brix[[11]]
           
           
-          
-          outputs[[as.character(doy)]]<-setNames(
-            list(
-              thisSite, thisYear, thisId, doy, tX, tN, p, irrigation, # 8
-              gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, # 14
-              trc1, ev1, dc1, wc1mm, daysNoRain, # 19
-              trc2, dc2, wc2mm, # 22
-              dc3, wc3mm, # 24
-              wc1, wc2, wc3, # 27
-              ws, # Assuming ws maps to 'waterStress', # 28
-              hs, cs, fIntPot, fIntAct, # 33
-              kc, et0, etR, # 36
-              radSim, # 37
-              carbonRateIde,carbonStateIde,carbonRatePot, carbonStatePot, carbonRateAct, carbonStateAct, # 41
-              floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct, # 45
-              cycleCompletion, # 46
-              fruitSetCoefficient, fruitsStateIde, fruitsStatePot, fruitsStateAct # 49
-            ), 
+          ## Populate output variables----
+          outputs[[as.character(doy)]]<-setNames(list(
+            thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
+            gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, 
+            trc1, ev1, dc1, wc1mm, daysNoRain, 
+            trc2, dc2, wc2mm, 
+            dc3, wc3mm,
+            wc1, wc2, wc3, 
+            ws, # Assuming ws maps to 'waterStress',
+            hs, cs, fIntPot, fIntAct, 
+            kc, et0, etR, radSim,
+            carbonRateIde,carbonStateIde,carbonRatePot, 
+            carbonStatePot, carbonRateAct, carbonStateAct,
+            floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct,
+            cycleCompletion,
+            fruitSetCoefficient, fruitsStateIde, fruitsStatePot, fruitsStateAct,
+            kt_aux,carbonSugarRate,carbonSugarState,
+            fruitWaterContentPot,fruitWaterContentPotRate,
+            fruitWaterContentSensitivity,fruitWaterContentAct,
+            fruitFreshWeightPot,fruitFreshWeightAct,
+            brixPot,brixAct), 
             outputNames)
         }
         ## Store the result in the outputs list ----     
@@ -1284,27 +1368,64 @@ floweringDynamics<-function(cycleCompletion, floweringLag, floweringSlope,flower
 
 #BRIX
 #' @keywords internal
-BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_1,
-                     gammaCarbon,gammaSugar)
+BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
+                     gammaCarbon,gammaSugar,fruitWaterContentMin,fruitWaterContentMax,
+                     fruitWaterContentInc,cycleCompletion,floweringLag,
+                     fruitWaterContentPot_y,fruitWaterContentAct_y,
+                     fruitWaterContentSensitivity,waterStress)
 {
-  if(dm_rate>0)
+  if(cycleCompletion>=floweringLag)
   {
     kt_aux <- kt_function(k0,dm_rate,dm_state)
     dayLength<-as.integer(photoperiod(doy,latitude))
   
-    carbonSugarFunction<-carbonSugar(kt_aux,dm_rate,dm_state,dayLength,carbonSugar_1,
+    carbonSugarFunction<-carbonSugar(kt_aux,dm_rate,dm_state,dayLength,carbonSugar_y,
                                      gammaCarbon,gammaSugar)
     carbonSugarRate<-carbonSugarFunction[[1]]
     carbonSugarState<-carbonSugarFunction[[2]]
+    fruitWaterContentFunction <- fruitWaterContent(fruitWaterContentMin,fruitWaterContentMax,
+                                              fruitWaterContentInc,cycleCompletion,floweringLag,
+                                              fruitWaterContentSensitivity,waterStress,
+                                              fruitWaterContentPot_y,fruitWaterContentAct_y)
+    fruitWaterContentPot<-fruitWaterContentFunction[[1]]
+    fruitWaterContentPotRate<-fruitWaterContentFunction[[2]]
+    fruitWaterContentSensitivity <- fruitWaterContentFunction[[3]]
+    fruitWaterContentAct<-fruitWaterContentFunction[[4]]
+    freshWeightFunction <- freshWeight(dm_state,fruitWaterContentPot,fruitWaterContentAct)
+    fruitFreshWeightPot<-freshWeightFunction[[1]]
+    fruitFreshWeightAct<-freshWeightFunction[[2]]
+    
+    if(fruitWaterContentPot < fruitWaterContentMax*.99)
+    {
+      brixPot<-NA
+      brixAct<-NA
+    }
+    else
+    {
+      brixPot<-(100*carbonSugarState)/(gammaSugar*fruitFreshWeightPot)
+      brixAct<-(100*carbonSugarState)/(gammaSugar*fruitFreshWeightAct)
+    }
   }
   else
   {
     kt_aux<-0
     carbonSugarRate<-0
     carbonSugarState<-0
+    fruitWaterContentPot<-0
+    fruitWaterContentSensitivity<-0
+    fruitWaterContentAct<-0
+    fruitWaterContentPotRate<-0
+    fruitFreshWeightPot<-0
+    fruitFreshWeightAct<-0
+    brixPot<-0
+    brixAct<-0
     
   }
-  return(list(kt_aux,carbonSugarRate,carbonSugarState))
+  return(list(kt_aux,carbonSugarRate,carbonSugarState,
+              fruitWaterContentPot,fruitWaterContentPotRate,
+              fruitWaterContentSensitivity,fruitWaterContentAct,
+              fruitFreshWeightPot,fruitFreshWeightAct,
+              brixPot,brixAct))
 }
 
 #' @keywords internal
@@ -1381,6 +1502,47 @@ carbonSugar<-function(kt,dm_rate,dm_state,dayLength,carbonSugar_1,
 }
 
 #' @keywords internal
+# Function to compute fruit water content
+fruitWaterContent<-function(fruitWaterContentMin,fruitWaterContentMax,
+                            fruitWaterContentInc,cycleCompletion,floweringLag,
+                            fruitWaterContentDecreaseMax,waterStress,
+                            fruitWaterContentPot_y,fruitWaterContentAct_y)
+{
+ 
+  #potential fruit water content state
+  fruitWaterStatePot<-fruitWaterContentMin + 
+    (fruitWaterContentMax - fruitWaterContentMin)*((1-exp(-(cycleCompletion-floweringLag)*fruitWaterContentInc)))
+  
+  #potential fruit water content rate
+  fruitWaterRatePot <- fruitWaterStatePot - fruitWaterContentPot_y
+  
+  #percentage ripening completion
+  ripeningCompletion <- (cycleCompletion-floweringLag) / (100-floweringLag)*100
+  #sensitivity to water stress
+  fruitSensitivityWS <- 1/(1+exp(-.1*(ripeningCompletion-50)))
+  #actual fruit water content rate
+  fruitWaterRateAct <- fruitWaterRatePot-fruitWaterContentDecreaseMax*
+                                            (fruitSensitivityWS*(1-waterStress))
+  #actual fruit water content state
+  fruitWaterStateAct <- fruitWaterContentAct_y + fruitWaterRateAct
+  
+  if(fruitWaterStateAct<fruitWaterContentMin)
+  {
+    fruitWaterStateAct<-fruitWaterContentMin
+  }
+  
+  return(list(fruitWaterStatePot,fruitWaterRatePot,
+              fruitSensitivityWS,fruitWaterStateAct))
+}
+
+freshWeight<-function(dm_state,fruitWaterContentPot,fruitWaterContentAct)
+{
+  freshWeightPot <- dm_state/(1-fruitWaterContentPot)
+  freshWeightAct <- dm_state/(1-fruitWaterContentAct)
+  return(list(freshWeightPot,freshWeightAct))
+}
+
+#' @keywords internal
 # Function to compute photoperiod
 photoperiod <- function(doy, latitude) {
   # Ensure latitude is within valid range
@@ -1413,4 +1575,6 @@ photoperiod <- function(doy, latitude) {
   
   return(photoperiod_hours)
 }
+
+
 
