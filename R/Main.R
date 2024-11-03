@@ -505,6 +505,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 cumba_scenario <- function(weather, param, estimateRad=T, 
                            estimateET0=T,transplantingDOY=120,waterStressLevel=.5, minimumTurn = 4)
 {
+  
   #opening message
   cat(crayon::red("                       _      __   \n"))
   cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
@@ -651,7 +652,6 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   ## Iterate through each site ---- 
   #TODO: only debug
   site<-1
-  ids <- unique(irrigation_df$ID)
   
   # constant for BRIX model
   gammaCarbon<-.44
@@ -723,10 +723,10 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           doy <- dfYear[day,DOYColID][[1]] #Day of the year
           # Current date being processed
           date<-(dfYear[day,1])[[1]]
-          
-          if(doy>=transplantingDOY && transplantingDOY+200)
+          doy<-121
+          if(doy>=transplantingDOY && transplantingDOY+150)
           {
-          #run in scenario mode --> trigger irrigation based on conditions
+            #run in scenario mode --> trigger irrigation based on conditions
             if(ws < waterStressLevel & daysNoRain>=minimumTurn-1)
             {
               #compute soil water at field capacity
@@ -774,8 +774,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           
           ## Compute root depth (cm)----     
           rootRate<-rootDepth(rootIncrease,gdd) #Root depth rate (cm/d)
-          rootState <- ifelse(rootState+rootRate<=rootDepthMax,
-                              rootState+rootRate,rootDepthMax) #Root depth state (cm)
+          rootState <- ifelse(rootState+rootRate<=rootDepthMax, rootState+rootRate,rootDepthMax) #Root depth state (cm)
           
           #if root state higher than the max, the root rate is 0
           if(rootState>rootDepthMax)
@@ -1452,7 +1451,16 @@ BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
 #' @keywords internal
 kt_function<-function(k0,dm_rate,dm_state)
 {
-  kt<-k0*(dm_rate*1/dm_state)^1.36
+    if(dm_state>0)
+    {
+      kt<-k0*(dm_rate*1/dm_state)^1.36
+    }
+    else
+    {
+      kt<-0
+    }
+      
+ 
   return(kt)
 }
 
@@ -1460,6 +1468,11 @@ kt_function<-function(k0,dm_rate,dm_state)
 carbonSugar<-function(kt,dm_rate,dm_state,dayLength,carbonSugar_1,
                       gammaCarbon,gammaSugar)
 {
+  if((is.na(kt)))
+  {
+    kt<-0
+  }
+  
   if(kt>0.025) #HOURLY LOOP
   {
     DM_rate_lightHours = dm_rate/as.integer(dayLength)
@@ -1598,4 +1611,16 @@ photoperiod <- function(doy, latitude) {
 }
 
 
+walk.through <- function() {
+  tb <- unlist(.Traceback)
+  if(is.null(tb)) stop("no traceback to use for debugging")
+  assign("debug.fun.list", matrix(unlist(strsplit(tb, "\\(")), nrow=2)[1,], envir=.GlobalEnv)
+  lapply(debug.fun.list, function(x) debug(get(x)))
+  print(paste("Now debugging functions:", paste(debug.fun.list, collapse=",")))
+}
 
+unwalk.through <- function() {
+  lapply(debug.fun.list, function(x) undebug(get(as.character(x))))
+  print(paste("Now undebugging functions:", paste(debug.fun.list, collapse=",")))
+  rm(list="debug.fun.list", envir=.GlobalEnv)
+}

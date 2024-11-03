@@ -16,7 +16,7 @@ KcIni,0.1,0.05,0.15,unitless
 KcMax,1.5,0.75,1.5,unitless
 RootIncrease,1,0.5,1.5,cm
 RootDepthMax,60,50,100,cm
-RootDepthInitial,60,2,6,cm
+RootDepthInitial,6,2,6,cm
 FieldCapacity,0.3,0.2,0.45,%
 WiltingPoint,0.1,0.05,0.15,%
 BulkDensity,1.2,0.6,1.8,t ha-1

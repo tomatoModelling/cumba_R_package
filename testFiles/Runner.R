@@ -73,7 +73,8 @@ options(scipen = 999)
 #
 #
 #write.csv(outputs,"testBrix3.csv")
-#call the cumba function
+#call the cumba function----
+#
 outputs<-cumba_scenario( weather, param, estimateRad = T,estimateET0 = T,120,
                         waterStressLevel=.2, minimumTurn = 10)  
 
@@ -260,3 +261,63 @@ ggplot(outputs_ref |> filter(year==2017) )+
         strip.text.x = element_blank())+
   xlab('')
 ggsave('yield2017.png',width=14,height=3)
+
+
+#TEST with NASA data----
+
+source("..//R//Main.R")
+options(scipen = 999)
+
+new_data <- nasapower::get_power(
+  community = "ag",
+  lonlat = c(35,28),
+  dates =c('2024-01-01','2024-10-28'),
+  temporal_api = "daily",
+  pars = c("T2M_MAX","T2M_MIN", "PRECTOTCORR"))
+
+# Function to fill NA with average of last and next available values
+fill_with_avg <- function(x) {
+  n <- length(x)
+  for (i in 1:n) {
+    if (is.na(x[i])) {
+      # Find previous available value
+      prev_val <- tail(x[1:(i-1)], n = 1)
+      # Find next available value
+      next_val <- head(x[(i+1):n], n = 1)
+      
+      # Calculate average if both values are available
+      if (!is.na(prev_val) && !is.na(next_val)) {
+        x[i] <- (prev_val + next_val) / 2
+      } else if (!is.na(prev_val) && is.na(next_val)) {
+        # If no next value, just carry forward the last available value
+        x[i] <- prev_val
+      } else if (is.na(prev_val) && !is.na(next_val)) {
+        # If no previous value, take the next value (not typical in real-world cases)
+        x[i] <- next_val
+      }
+    }
+  }
+  return(x)
+}
+
+cumbaInput<-new_data |> 
+  mutate(grid = paste0(LAT, '_',LON)) |> 
+  rename(Site = grid,Tx = T2M_MAX,Tn=T2M_MIN,P=PRECTOTCORR,DATE=YYYYMMDD,Lat = LAT ) |> 
+  select(Site,Tx,Tn,P,DATE,Lat) |> 
+  mutate(
+    Tx = fill_with_avg(Tx),
+    Tn = fill_with_avg(Tn),
+    P = replace_na(P, 0)
+  )
+
+
+
+debug(cumba_scenario)
+undebug(cumba_scenario)
+#mtrace(FunctionName)
+
+# call cumbà ----
+outputs<- cumba_scenario(cumbaInput,param,
+                         estimateRad = T,estimateET0 = T, 120,waterStressLevel=0.5,minimumTurn = 3)  
+
+undebug(cumba_scenario)
