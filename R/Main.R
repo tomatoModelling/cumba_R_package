@@ -723,7 +723,6 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           doy <- dfYear[day,DOYColID][[1]] #Day of the year
           # Current date being processed
           date<-(dfYear[day,1])[[1]]
-          doy<-121
           if(doy>=transplantingDOY && transplantingDOY+150)
           {
             #run in scenario mode --> trigger irrigation based on conditions

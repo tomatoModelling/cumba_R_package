@@ -1,6 +1,7 @@
 library(shiny)
 library(leaflet)
 library(dplyr)
+library(tidyr)
 library(sf)
 library(nasapower)
 library(plotly)
@@ -171,7 +172,7 @@ function(input, output, session) {
     
     max_year <- lubridate::year(max(thisWeather_data$YYYYMMDD))
     
-    if(max_year!=lubridate::year(Sys.Date()))
+    if(max_year!=lubridate::year(Sys.Date()) && length(unique(thisWeather_data$grid)>1))
     {
       bounds <- bbox()
       length(bounds)
@@ -212,10 +213,44 @@ function(input, output, session) {
                 input$FruitWaterContentInc,input$FruitWaterContentDecreaseMax)
     )
     
+    # Function to fill NAs in case of current year 
+    
+    # Function to fill NA with average of last and next available values
+    fill_with_avg <- function(x) {
+      n <- length(x)
+      for (i in 1:n) {
+        if (is.na(x[i])) {
+          # Find previous available value
+          prev_val <- tail(x[1:(i-1)], n = 1)
+          # Find next available value
+          next_val <- head(x[(i+1):n], n = 1)
+          
+          # Calculate average if both values are available
+          if (!is.na(prev_val) && !is.na(next_val)) {
+            x[i] <- (prev_val + next_val) / 2
+          } else if (!is.na(prev_val) && is.na(next_val)) {
+            # If no next value, just carry forward the last available value
+            x[i] <- prev_val
+          } else if (is.na(prev_val) && !is.na(next_val)) {
+            # If no previous value, take the next value (not typical in real-world cases)
+            x[i] <- next_val
+          }
+        }
+      }
+      return(x)
+    }
+    
     cumbaInput<-thisWeather_data |> 
+      filter(lubridate::year(YYYYMMDD)>=lubridate::year(as.Date(dates[[1]])) & 
+               lubridate::year(YYYYMMDD)<=lubridate::year(as.Date(dates[[2]]))) |> 
       mutate(grid = paste0(LAT, '_',LON)) |> 
       rename(Site = grid,Tx = T2M_MAX,Tn=T2M_MIN,P=PRECTOTCORR,DATE=YYYYMMDD,Lat = LAT ) |> 
-      select(Site,Tx,Tn,P,DATE,Lat)
+      select(Site,Tx,Tn,P,DATE,Lat) |> 
+      mutate(
+        Tx = fill_with_avg(Tx),
+        Tn = fill_with_avg(Tn),
+        P = tidyr::replace_na(P, 0)
+      )
     
     # call cumbà ----
     outputs<- cumba_scenario(cumbaInput,param |> pivot_wider(names_from=Parameter, values_from=c(Value)),
@@ -225,89 +260,69 @@ function(input, output, session) {
     outputs$wc2<--100+((outputs$wc2 - 0.1) / (0.3 - 0.1)) * (100)
     outputs$wc3<--100+((outputs$wc3 - 0.1) / (0.3 - 0.1)) * (100)
     
+    outputs<-cumbaInput |> 
+      left_join(outputs)
     
     # Get the unique years
     years <- unique(outputs$year)
     
-    # Create plots for each year
-    plots <- lapply(years, function(yr) {
-      # Filter data for the specific year and DOY range
-      year_data <- outputs %>%
-        filter(year == yr, doy > 120, doy < 300)
-      
-      # Check if year_data is not empty
-      if (nrow(year_data) == 0) {
-        return(NULL)  # Return NULL if there's no data for this year
-      }
-      
-      # Initialize the plot
-      p <- plot_ly()
+  
+    # Initialize the plot
+    p <- plot_ly()
       
     
       # Add an area for daily precipitation
       p <- p %>%
-        add_trace(data = year_data, x = ~doy, y = ~fIntAct * 100, type = 'scatter', mode = 'none',
-                  fill = 'tozeroy', fillcolor = I("green"), name = "Light interception") %>%
-        add_lines(data = year_data, x = ~doy, y = ~floweringStateAct*100, name = paste("floweringStateAct  -", yr), 
-                  yaxis = "y2",
+        add_trace(data = outputs, x = ~DATE, y = ~fIntAct * 100, type = 'scatter', mode = 'none',
+                  fill = 'tozeroy', fillcolor = I("green"), name = "canopy") %>%
+        add_lines(data = outputs, x = ~DATE, y = ~floweringRateAct*100, name = "flowering act.", yaxis = "y1",
                   color = I("yellow"), line = list(width = 1), showlegend = FALSE) %>%
-        add_trace(data = year_data, x = ~doy, y = ~floweringStateIde * 100, type = 'scatter', mode = 'none',
+        add_trace(data = outputs, x = ~DATE, y = ~floweringRateIde * 100, type = 'scatter', mode = 'none',
                   fill = 'tozeroy', fillcolor = I("yellow4"), name = "FloweringPot") %>%
-        add_trace(data = year_data, x = ~doy, y = ~-rootState, type = 'scatter', mode = 'none',
-                  fill = 'tozeroy', fillcolor = 'rgba(0, 0, 255, 0.5)', name = "Daily Precipitation") %>%
-        add_bars(data = year_data, x = ~doy, y = ~p, name = paste("Daily Precipitation -", yr), 
-                 color = I("blue")) %>%
-        add_bars(data = year_data, x = ~doy, y = ~irrigation, name = paste("irrigation -", yr), 
-                 color = I("cyan")) %>%
-        add_lines(data = year_data, x = ~doy, y = ~100-(heatStress*100), name = paste("Heat stress  -", yr), yaxis = "y2",
+        add_trace(data = outputs, x = ~DATE, y = ~-rootState, type = 'scatter', mode = 'none',
+                  fill = 'tozeroy', fillcolor = 'rgba(0, 0, 255, 0.5)', name = "flowering pot.") %>%
+        add_bars(data = outputs, x = ~DATE, y = ~P*4, name = "precipitation", color = I("blue"), yaxis = "y2") %>%
+        add_bars(data = outputs, x = ~DATE, y = ~irrigation, name = "irrigation", color = I("cyan"), yaxis = "y2") %>%
+        add_lines(data = outputs, x = ~DATE, y = ~100-(heatStress*100)+100, name = "heat stress", yaxis = "y1",
                   color = I("pink"), line = list(width = 1), showlegend = FALSE) %>%
-        add_lines(data = year_data, x = ~doy, y = ~100-(coldStress*100), name = paste("Cold stress  -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y = ~100-(coldStress*100)+100, name = "cold stress", yaxis = "y1",
                   color = I("black"), line = list(width = 1), showlegend = FALSE) %>%
-        add_lines(data = year_data, x = ~doy, y = ~waterStress*100, name = paste("Water stress  -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y = ~waterStress*100+100, name = "water stress", yaxis = "y1",
                   color = I("gold"), line = list(width = 1), showlegend = FALSE) %>%
-        add_lines(data = year_data, x = ~doy, y = ~tMax, name = paste("Max Temperature -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y = ~Tx+60, name = "T max", yaxis = "y2",
                   color = I("orange"), line = list(width = 1), showlegend = FALSE) %>%
-        add_lines(data = year_data, x = ~doy, y = ~tMin, name = paste("Min Temperature -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y = ~Tn+60, name = "T min", yaxis = "y2",
                   color = I("lightblue2"), line = list(width = 1), showlegend = FALSE) %>%
-        add_lines(data = year_data, x = ~doy, y = ~fruitsStateAct/5, name = paste("Fruits -", yr), yaxis = "y1",
+        add_lines(data = outputs, x = ~DATE, y = ~fruitsStateAct/5, name = "Fruits", yaxis = "y1",
                   color = I("red"), line = list(width = 2)) |> 
-        add_lines(data = year_data, x = ~doy, y = ~brixAct*10, name = paste("Brix -", yr), yaxis = "y2",
-                color = I("blue"), line = list(width = 2)) |> 
-        add_lines(data = year_data, x = ~doy, y = ~wc1, name = paste("WC1 -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y = ~brixAct*10, name = "Brix", yaxis = "y1",
+                color = I("blue"), line = list(width = 3)) |> 
+        add_lines(data = outputs, x = ~DATE, y = ~wc1, name = "SWC 1", yaxis = "y1",
                   color = I("magenta"), line = list(width = 2)) |> 
-        add_lines(data = year_data, x = ~doy, y =  ~wc2, name = paste("WC2 -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y =  ~wc2, name = "SWC 2", yaxis = "y1",
                   color = I("cyan4"), line = list(width = 2)) |> 
-        add_lines(data = year_data, x = ~doy, y = ~wc3, name = paste("WC3 -", yr), yaxis = "y2",
+        add_lines(data = outputs, x = ~DATE, y = ~wc3, name = "SWC 3 -", yaxis = "y1",
                   color = I("slateblue4"), line = list(width = 2))
       
       # Define the layout with dual y-axes and title
       p <- p %>%
         layout(
-          title = paste("Some Outputs for Year", yr),
-          yaxis = list(title = "Precipitation (mm)"),
-          yaxis2 = list(title = "Temperature (°C)", overlaying = "y", side = "right"),
-          xaxis = list(title = "Day of Year (DOY)"),
-          showlegend = FALSE  # Remove legend from the entire layout as well
+          title = paste("tomato growing seasons"),
+          yaxis = list(title = "Precipitation (mm)", automargin = TRUE),  # Automargin to fit titles
+          yaxis2 = list(title = "Temperature (°C)", overlaying = "y", side = "right", automargin = TRUE),
+          xaxis = list(title = "", automargin = TRUE),
+          showlegend = FALSE,
+          margin = list(l = 0, r = 0, t = 0, b = 0),
+          xaxis2 = list(
+            overlaying = "x",
+            side = "top",
+            showgrid = FALSE,
+            zeroline = FALSE,
+            showline = FALSE
+          )
         )
-      
-      # Return the plot for this year
-      return(p)
-    })
-    
-    # Remove NULL elements from the plots list (if any)
-    plots <- Filter(Negate(is.null), plots)
-    
-    # Check if plots list is empty before creating subplot
-    if (length(plots) > 0) {
-      # Combine the plots into a single column layout
-      final_plot <- subplot(plots, nrows = 1, shareY = T, titleY = TRUE)
-      
-      # Display the final plot
-      final_plot
-    } else {
-      # Display a message if no data is available
-      plot_ly() %>% add_text(text = "No data available for the specified DOY range across years.")
-    }
+      p
+   
   })
 }
 

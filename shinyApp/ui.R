@@ -129,7 +129,7 @@ navbarPage("",
                         h4("Growth Parameters", class = "growth-parameters"),  # Use h4 or h5 for your label
                         fluidRow(
                           column(3, div(class = "slider-container growth-slider", sliderInput("TGro", "T growth (°C)", 
-                                                                                min = 6, max = 30, value = c(10,33)))),
+                                                                                min = 6, max = 35, value = c(10,33)))),
                           column(3, div(class = "slider-container growth-slider", sliderInput("Topt", "T opt (°C)", 
                                                                                 min = 20, max = 27, value = 26))),
                           column(3, div(class = "slider-container growth-slider", sliderInput("TStress", "T stress (°C)", 
@@ -179,11 +179,14 @@ navbarPage("",
                                                    min = 0.0005, max = 0.015, value = 0.001))),
                         ),
                         
+                        ###action button ----
                         actionButton("runModel", "Run Model"),
                       ),
+                      ## main panel----
                       mainPanel(
                         fluidRow(
-                          column(12),sliderInput("year_range", "Select Year Range:",
+                          column(12),
+                          sliderInput("year_range", "Select Year Range:",
                                                  min = 1990, 
                                                  max = 2024, 
                                                  value = c(2000, 2024),
