@@ -10,9 +10,11 @@ library(sirad)
 library(tidyr)
 library(devtools)
 library(remotes)
-#install_github("tomatoModelling/cumba_R_package")
+install_github("tomatoModelling/cumba_R_package")
 #library(cumba)
 
+devtools::document()       # rigenera NAMESPACE se usi roxygen2
+devtools::install()
 
 # Set this directory as the working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
