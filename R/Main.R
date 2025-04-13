@@ -446,8 +446,8 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
       }
       
       #message to console
-      cat(crayon::green(paste("\r","experiment ", thisId, " in site ", 
-                              thisSite, " and year ", thisYear, " executed")))
+      cat(crayon::green(paste("\r","🍅 running experiment ", thisId, " in site ", 
+                              thisSite, " and year ", thisYear)))
       
       
       # Use do.call and rbind to bind rows into a single data frame
@@ -969,8 +969,8 @@ cumba_scenario <- function(weather, param, estimateRad=T,
         names(tempOutputs) <- outputNames # Rename columns
         outputsExperiment[[as.character(thisId)]]<-tempOutputs
         
-        cat(crayon::green(paste("experiment ", thisId, " in site ", 
-                                thisSite, " and year ", thisYear, " executed\n")))#message to console
+        cat(crayon::green(paste("🍅 running experiment ", thisId, " in site ", 
+                                thisSite, " and year ", thisYear, "\n")))#message to console
       }
       
       # Use do.call and rbind to bind rows into a single data frame

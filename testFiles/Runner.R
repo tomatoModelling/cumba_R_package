@@ -3,14 +3,14 @@
 rm(list=ls())
 
 # Libraries: ----
-library(tidyverse)
-library(lubridate)
-library(readxl)
-library(sirad)
-library(tidyr)
-library(devtools)
-library(remotes)
-#install_github("tomatoModelling/cumba_R_package")
+# library(tidyverse)
+# library(lubridate)
+# library(readxl)
+# library(sirad)
+# library(tidyr)
+# library(devtools)
+# library(remotes)
+# install_github("tomatoModelling/cumba_R_package")
 library(cumba)
 
 #devtools::document()       # rigenera NAMESPACE se usi roxygen2
