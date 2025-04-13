@@ -2,7 +2,7 @@
 #'
 #' It is a daily time step simulation model which computes the yield and brix degree of a tomato crop as a function of weather data and irrigation options.
 #' @param weather a dataframe with weather data which must have the following columns......
-#' @param param a dataframe with model parameters values
+#' @param param A named list of model parameters, where each element is a list with fields 'value', 'min', 'max', and 'description'
 #' @param estimateRad a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have the Rad column
 #' @param estimateET0 a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
 #' @param irrigation_df a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
@@ -11,16 +11,13 @@
 #' @export
 cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrigation_df)
 {
-  #opening message
-  cat(crayon::red("                       _      __   \n"))
-  cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
-  cat(crayon::red("  / __| | | | '_ ` _ \\| '_ \\ / _` |\n"))
-  cat(crayon::red(" | (__| |_| | | | | | | |_) | (_| |\n"))
-  cat(crayon::red("  \\___|\\__,_|_| |_| |_|_.__/ \\__,_|\n"))
-  cat(crayon::red("                                   \n"))
+  # convert param list
+  if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
+    param <- tibble::as_tibble(lapply(param, function(p) p$value))
+  }
   
   #message on runner modality
-  cat(crayon::blue(paste("running in experiment mode","\n")))
+  cat(crayon::blue(paste("CUMBA running in experiment mode","\n")))
   
   # Check if required columns exist in weather data frame
   required_columns <- c("Site", "Tx", "Tn", "P", "DATE")
@@ -493,7 +490,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 #'
 #' It is a daily time step simulation model which computes the yield and brix degree of a tomato crop as a function of weather data and irrigation options.
 #' @param weather a dataframe with weather data which must have the following columns......
-#' @param param a dataframe with model parameters values
+#' @param param A named list of model parameters, where each element is a list with fields 'value', 'min', 'max', and 'description'
 #' @param estimateRad a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have the Rad column
 #' @param estimateET0 a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
 #' @param deficitIrrigation a boolean value to estimate irrigation requirements. Default to 'false', implying that the irrigation_df is provided.
@@ -505,17 +502,12 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 cumba_scenario <- function(weather, param, estimateRad=T, 
                            estimateET0=T,transplantingDOY=120,waterStressLevel=.5, minimumTurn = 4)
 {
+  # convert param list
+  if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
+    param <- tibble::as_tibble(lapply(param, function(p) p$value))
+  }
   
-  #opening message
-  cat(crayon::red("                       _      __   \n"))
-  cat(crayon::red("   ___ _   _ _ __ ___ | |__   \\_\\_ \n"))
-  cat(crayon::red("  / __| | | | '_ ` _ \\| '_ \\ / _` |\n"))
-  cat(crayon::red(" | (__| |_| | | | | | | |_) | (_| |\n"))
-  cat(crayon::red("  \\___|\\__,_|_| |_| |_|_.__/ \\__,_|\n"))
-  cat(crayon::red("                                   \n"))
-  
-  
-  cat(crayon::blue(paste("running in deficit irrigation mode, with water stress level = ",
+  cat(crayon::blue(paste("CUMBA running in deficit irrigation mode, with water stress level = ",
                            waterStressLevel, " and minimum turn equal to", 
                        minimumTurn, " days!\n")))
   

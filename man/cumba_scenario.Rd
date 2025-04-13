@@ -17,7 +17,7 @@ cumba_scenario(
 \arguments{
 \item{weather}{a dataframe with weather data which must have the following columns......}
 
-\item{param}{a dataframe with model parameters values}
+\item{param}{A named list of model parameters, where each element is a list with fields 'value', 'min', 'max', and 'description'}
 
 \item{estimateRad}{a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have the Rad column}
 

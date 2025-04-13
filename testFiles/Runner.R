@@ -10,11 +10,11 @@ library(sirad)
 library(tidyr)
 library(devtools)
 library(remotes)
-install_github("tomatoModelling/cumba_R_package")
-#library(cumba)
+#install_github("tomatoModelling/cumba_R_package")
+library(cumba)
 
-devtools::document()       # rigenera NAMESPACE se usi roxygen2
-devtools::install()
+#devtools::document()       # rigenera NAMESPACE se usi roxygen2
+#devtools::install()
 
 # Set this directory as the working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -40,7 +40,7 @@ yield  <- as.data.frame(all_sheets[5])
 
 # Read parameters ----
 param<-read.csv('parameters.csv') |> 
-  select(-c(unit,min,max)) |> 
+  select(-c(description,unit,min,max)) |> 
   pivot_wider(names_from=parameter, values_from=c(value))
 
 estimateRadiation = T
@@ -51,7 +51,7 @@ weather<-weather |>
 
 #library(data.table)
 
-source("..//R//Main.R")
+#source("..//R//Main.R")
 options(scipen = 999)
 ##call the cumba function
 #outputs<-cumba_experiment(weather, param, 
@@ -77,8 +77,10 @@ options(scipen = 999)
 #write.csv(outputs,"testBrix3.csv")
 #call the cumba function----
 #
-outputs<-cumba_scenario( weather, param, estimateRad = T,estimateET0 = T,120,
-                        waterStressLevel=.2, minimumTurn = 10)  
+
+#source('..//R//Main.R')
+
+outputs<-cumba_experiment( weather,cumbaParameters , estimateRad = T,estimateET0 = T,irrigation_df)  
 
 lastDay<-outputs |> 
   group_by(experiment) |> 

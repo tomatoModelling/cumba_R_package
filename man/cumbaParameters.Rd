@@ -7,7 +7,7 @@
 \format{
 A named list where each entry is a list with the following fields:
 \describe{
-  \item{description}{The description of each parameter}
+  \item{description}{Text description of the parameter}
   \item{value}{The default value of the parameter}
   \item{min}{The minimum allowed value}
   \item{max}{The maximum allowed value}
@@ -20,13 +20,11 @@ cumbaParameters
 This object contains the default model parameters used in the Cumba package.
 The parameters are loaded from a CSV file and provided as a named list.
 Each element of the list corresponds to a model parameter and includes its 
-current value, minimum, and maximum.
+current value, minimum, maximum, and description.
 }
 \examples{
-#' # Access parameter list
 names(cumbaParameters)
-cumbaParameters$Tmin$value
-cumbaParameters$Tmin$min
+cumbaParameters$Tbase$value
 
 }
 \keyword{datasets}
