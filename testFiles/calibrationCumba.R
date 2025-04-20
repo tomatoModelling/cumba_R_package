@@ -54,6 +54,8 @@ lossFunctionGA <- function(params, weather, sowing_date) {
   cumbaParameters$RootIncrease$value        <- params[7]
   cumbaParameters$FloweringMax$value        <- params[8]
   cumbaParameters$RootDepthMax$value        <- params[9]
+  cumbaParameters$Tbase$value        <- params[10]
+  cumbaParameters$Tmax$value        <- params[11]
   
   # Run crop simulation
   CropSim <- cumba_experiment(weather, cumbaParameters, 
@@ -87,12 +89,14 @@ parametersCumba <- read.csv("parameters.csv")
 lowerPar <- c(cumbaParameters$Topt$min, cumbaParameters$RUE$min, cumbaParameters$FloweringLag$min,
               cumbaParameters$CycleLength$min, cumbaParameters$WaterStressSensitivity$min,
               cumbaParameters$Theat$min, cumbaParameters$RootIncrease$min,
-              cumbaParameters$FloweringMax$min, cumbaParameters$RootDepthMax$min)
+              cumbaParameters$FloweringMax$min, cumbaParameters$RootDepthMax$min,
+              cumbaParameters$Tbase$min,cumbaParameters$Tmax$min)
 
 upperPar <- c(cumbaParameters$Topt$max, cumbaParameters$RUE$max, cumbaParameters$FloweringLag$max,
               cumbaParameters$CycleLength$max, cumbaParameters$WaterStressSensitivity$max,
               cumbaParameters$Theat$max, cumbaParameters$RootIncrease$max,
-              cumbaParameters$FloweringMax$max, cumbaParameters$RootDepthMax$max)
+              cumbaParameters$FloweringMax$max, cumbaParameters$RootDepthMax$max,
+              cumbaParameters$Tbase$max,cumbaParameters$Tmax$max)
 
 # Run GA Optimization
 ga_result <- ga(
@@ -124,7 +128,7 @@ paramCalibrated <- readRDS("ga_result.rds")[[1]]
 
 # Update model parameters
 cumbaParameters$Topt$value                <- paramCalibrated[1]
-cumbaParameters$RUE$value                 <- paramCalibrated[2]
+cumbaParameters$RUE$value                 <- paramCalibrated[2]*0.6
 cumbaParameters$FloweringLag$value        <- paramCalibrated[3]
 cumbaParameters$CycleLength$value         <- paramCalibrated[4]
 cumbaParameters$WaterStressSensitivity$value <- paramCalibrated[5]
@@ -132,9 +136,11 @@ cumbaParameters$Theat$value               <- paramCalibrated[6]
 cumbaParameters$RootIncrease$value        <- paramCalibrated[7]
 cumbaParameters$FloweringMax$value        <- paramCalibrated[8]
 cumbaParameters$RootDepthMax$value        <- paramCalibrated[9]
+cumbaParameters$Tbase$value        <- paramCalibrated[10]
+cumbaParameters$Tmax$value        <- paramCalibrated[11]
 
 # Perform final simulation
-optimizedSimulation <- cumba_experiment(weatherTest, cumbaParameters,
+optimizedSimulation <- cumba_experiment(weather, cumbaParameters,
                                         estimateRad = TRUE, estimateET0 = TRUE,
                                         irrigation_df)
 

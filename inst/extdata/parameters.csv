@@ -1,28 +1,28 @@
 ﻿parameter,description,unit,value,min,max
-Tbase,Base temperature for growth and development,°C,10,6,13
+Tbase,Base temperature for growth and development,°C,10,5,13
 Topt,Optimum temperature for growth and development,°C,26,22,28
-Tmax,Maximum temperature for growth and development,°C,35,30.5,35
-Theat,Temperature corresponding to maximum heat stress,°C,40,35.5,45
+Tmax,Maximum temperature for growth and development,°C,35,31,38
+Theat,Temperature corresponding to maximum heat stress,°C,40,38,48
 Tcold,Temperature corresponding to maximum cold stress,°C,0,0,5
 FIntMax,Maximum fraction of light interception,unitless,1,0.5,1
 CycleLength,Tomato cycle length,degree days,1500,1000,1600
 TransplantingLag,Percentage of crop cycle when transplanting shock ends,%,10,5,15
-FloweringLag,Percentage of crop cycle when flowering occurs,%,30,20,50
+FloweringLag,Percentage of crop cycle when flowering occurs,%,30,15,40
 HalfIntGrowth,Percentage of crop cycle when light interception is 50% in the growth phase,unitless,20,10,40
 HalfIntSenescence,Percentage of crop cycle when light interception is 50% in the senescence phase,unitless,95,70,95
 InitialInt,Inital light interception,unitless,0.05,0.05,0.15
-RUE,Maximum radiation use efficiency,g MJ-1,2.3,2,3.5
+RUE,Maximum radiation use efficiency,g MJ-1,2.3,1.5,3.5
 KcIni,Initial crop coefficient for transpiration,unitless,0.1,0.1,0.2
-KcMax,Maximum crop coefficient for transpiration,unitless,1.5,0.9,1.2
-RootIncrease,Daily maximum root increase rate,cm,1,0.5,1.5
+KcMax,Maximum crop coefficient for transpiration,unitless,1.2,0.9,1.5
+RootIncrease,Daily maximum root increase rate,cm,1,0.3,1.5
 RootDepthMax,Maximum root depth,cm,60,50,100
 RootDepthInitial,Initial root depth,cm,6,2,6
-FieldCapacity,Field Capacity (lo togliamo da qua?),%,0.3,0.2,0.45
-WiltingPoint,Wilting Point,%,0.1,0.05,0.15
+FieldCapacity,Field Capacity (lo togliamo da qua?),%,0.3,0.1,0.45
+WiltingPoint,Wilting Point,%,0.1,0.05,0.2
 BulkDensity,Bulk density,t ha-1,1.2,0.6,1.8
 WaterStressSensitivity,Crop sensitivity to drought stress,unitless,3,0.5,4.5
 FloweringSlope,Slope of the flowering curve,unitless,0.4,0.25,0.5
-FloweringMax,Percentage of the crop cycle when flowering is maximum,unitless,80,40,80
+FloweringMax,Percentage of the crop cycle when flowering is maximum,unitless,60,40,80
 k0,initial rate of sugar consumption for synthesis of other compounds,unitless,4,3,6
 FruitWaterContentMin,Minimum fruit water content,%,0.6,0.8,0.85
 FruitWaterContentMax,Maximum fruit water content,%,0.95,0.88,0.98
