@@ -8,7 +8,33 @@
 #' @param irrigation_df a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
 #' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
 #' @examples 
+#' #' # Example weather dataframe
+#' weather <- data.frame(
+#'   Site = "TestSite",
+#'   Tx = c(30, 32),
+#'   Tn = c(20, 21),
+#'   P = c(0, 5),
+#'   DATE = as.Date(c("2025-06-01", "2025-06-02")),
+#'   Lat = 40
+#' )
+#'
+#' # Example irrigation dataframe
+#' irrigation_df <- data.frame(
+#'   ID = 1,
+#'   Site = "TestSite",
+#'   YEAR = 2025,
+#'   DATE = as.Date(c("2025-06-01", "2025-06-02")),
+#'   WVOL = c(5, 10)
+#' )
+#'
+#' # Minimal parameters using cumbaParameters dataset
+#' params <- lapply(cumbaParameters, function(p) p)  # copy default params
+#'
+#' # Run the model (small dataset)
+#' # result <- cumba_experiment(weather, params, irrigation_df = irrigation_df)
+#'
 #' @export
+#' 
 cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrigation_df)
 {
   # convert param list
@@ -40,8 +66,12 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   RadColID<-0
   Lat <- 0
   
-  if(estimateRad == F){RadColID <- which(colnames(weather)=='Rad')}
-  else{LatColID <- which(colnames(weather)=='Lat')}
+  if(estimateRad == F){
+    RadColID <- which(colnames(weather)=='Rad')
+    }
+  else{
+    LatColID <- which(colnames(weather)=='Lat')
+    }
   
   ET0ColID<-0
   if(estimateET0 == F){ET0ColID<-which(colnames(weather)=="ET0")}
@@ -59,7 +89,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   sites<-unlist(as.vector(unique(weather[,SiteColID]))) 
   
   # Check if param list contains all required elements
-  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax","k0","FruitWaterContentMin","FruitWaterContentMax","FruitWaterContentInc","FruitWaterContentDecreaseMax")
+  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "DepletionFraction", "FloweringSlope", "FloweringMax","k0","FruitWaterContentMin","FruitWaterContentMax","FruitWaterContentInc","FruitWaterContentDecreaseMax")
   
   missing_param_elements <- setdiff(required_param_elements, names(param))
   if (length(missing_param_elements) > 0) {stop(crayon::red(paste("Missing required elements in 'param':", paste(missing_param_elements, collapse = ", "))))}
@@ -94,8 +124,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   rootDepthInitial<-param$RootDepthInitial
   fieldCapacity <-param$FieldCapacity
   wiltingPoint <-param$WiltingPoint
-  bulkDensity<-param$BulkDensity
-  waterStressSensitivity<- - param$WaterStressSensitivity
+  depletionFraction<- param$DepletionFraction/100
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
   k0<-param$k0
@@ -103,6 +132,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   fruitWaterContentMax <- param$FruitWaterContentMax
   fruitWaterContentInc <- param$FruitWaterContentInc
   fruitWaterContentDecreaseMax<-param$FruitWaterContentDecreaseMax
+  soilWaterInitial <- param$SoilWaterInitial
   
   #compute maximum value of the double logistic for flowering
   x<-seq(0:100)
@@ -146,6 +176,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   gammaCarbon<-.44
   gammaSugar<-.42
   
+  
   for(site in 1:length(sites))
   {
     #the ids
@@ -164,7 +195,8 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
     years<-unlist(as.vector(unique(dfSite[,"year"]))) 
 
     #TODO: for debug
-    year<-1
+    year<-9
+ 
     for(year in 1:length(years))
     {
       idsYear <- ids |> filter(YEAR == years[[year]])
@@ -193,6 +225,8 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
         rootState<-rootDepthInitial
         daysNoRain<-0
         ws<-1
+        wc1_y<-wiltingPoint+((fieldCapacity-wiltingPoint)*(soilWaterInitial/100))
+        wc2_y<-wc1_y
         
         # Current year being processed 
         thisYear <- years[year][[1]]
@@ -202,7 +236,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 
         # Iterate through each day in the current year ----       
         #TODO: for debug
-        day<-2
+        day<-1
         outputs<-list() #clean the list each year
         for(day in 1:nrow(dfYear))
         {
@@ -233,7 +267,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           #ET0
           et0<-0
           if(estimateET0 == T){
-            et0<-0.008*(tAve+17.78)*radSim #ET0-Hargreaves method, mm d-1
+            et0<-et0Compute(Lat,doy,tX,tN)
           }else{
             et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #ET0, mm d-1
           }
@@ -270,7 +304,19 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           if(length(outputs)>0 & phenoCode>=1){ 
             fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
             fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
-            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntActRate
+            
+            fIntModifier<-0
+            if(fIntPotRate>0){
+              fIntModifier<-fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+            }
+            else
+            {
+              fIntModifier<-fIntPotRate*(1+(1-outputs[[as.character(doy-1)]][['waterStress']]))
+            }
+            
+            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntModifier
+            
+            
             if(fIntAct<0)
             {
               fIntAct<-0
@@ -299,12 +345,33 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
             daysNoRain<-0
           }
           
+          
+          #ftsw calculation
+          if(length(outputs)>0)
+          {
+            wc1_y <- outputs[[as.character(doy-1)]][['wc1']]
+            wc2_y <- outputs[[as.character(doy-1)]][['wc2']]
+          }
+          
+          if (rootState>3){
+             wsAve = (wc1_y*3 + wc2_y * (rootState-3))/(rootState)
+           }else
+           {
+             wsAve = wc1_y
+           }
+
+          #water stress
+          ftsw <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint )
+          if(ftsw>1) {ftsw <- 1}
+          
+          
           #compute soil water dynamics
-          soilModel <- soilWaterModel(doy, outputs, 
-                                      waterStressSensitivity, irrigation, p,
+          soilModel <- soilWaterModel(doy, outputs, ftsw,
+                                      depletionFraction, irrigation, p,
                          rootState, rootRate, rootDepthInitial, rootDepthMax, etR,
                          waterStressFactor, fIntAct,
-                         et0,daysNoRain,fieldCapacity, wiltingPoint, bulkDensity)
+                         et0,daysNoRain,fieldCapacity, wiltingPoint,
+                         soilWaterInitial)
           #assign local variables
           trc1 <- soilModel[[1]]
           ev1 <- soilModel[[2]]
@@ -319,18 +386,11 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           dc3 <- soilModel[[11]]
           wc3mm <- soilModel[[12]]
           wc3 <- soilModel[[13]]
+          ws <- soilModel[[14]]
           
-          if (rootState>3){
-            wsAve = (wc1*3 + wc2 * (rootState-3))/(rootState)
-          }else
-          {
-            wsAve = wc1
-          }
+         
           
-          #water stress
-          ws <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint ) 
-          if(ws>1) {ws<-1}
-        
+          
           ## Compute carbon rates and update carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
           carbonRatePot <- carbonRate(rue,radSim,gdd,fIntPot,hs,cs,1) #heat/cold stress
@@ -346,7 +406,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
                                                 floweringSlope,floweringMax)
             floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
                                     outputs[[as.character(doy-1)]][['floweringStateIde']]) 
-            floweringRateAct <-floweringRateIde*(1-hs)
+            floweringRateAct <-floweringRateIde*(1-hs)*(1-cs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
                                      outputs[[as.character(doy-1)]][['floweringStateAct']])  
           }else{
@@ -391,7 +451,6 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
             fruitWaterContentAct_y<-NA
           }
           
-        
           Brix <- BRIX_model(k0,fruitsRateAct,fruitsStateAct,
                              Lat,doy,carbonSugarState_1,
                              gammaCarbon,gammaSugar,
@@ -498,6 +557,29 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 #' @param minimumTurn an integer corresponding to the minimum number of days elapsed from the previous irrigation event. Default to 4, it is needed only if deficitIrrigation is 'true'.
 #' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
 #' @examples 
+#' #' # Example weather dataframe
+#' weather <- data.frame(
+#'   Site = "TestSite",
+#'   Tx = c(30, 32, 31),
+#'   Tn = c(20, 21, 19),
+#'   P = c(0, 5, 2),
+#'   DATE = as.Date(c("2025-06-01", "2025-06-02", "2025-06-03")),
+#'   Lat = 40
+#' )
+#'
+#' # Minimal parameters: use default package data
+#' params <- lapply(cumbaParameters, function(p) p)  # copy default parameters
+#'
+#' # Run the model in automatic irrigation (scenario) mode
+#' # result <- cumba_scenario(
+#' #   weather,
+#' #   params,
+#' #   estimateRad = TRUE,
+#' #   estimateET0 = TRUE,
+#' #   waterStressLevel = 0.5,
+#' #   minimumTurn = 4
+#' # )
+#'
 #' @export
 cumba_scenario <- function(weather, param, estimateRad=T, 
                            estimateET0=T,transplantingDOY=120,waterStressLevel=.5, minimumTurn = 4)
@@ -556,7 +638,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   sites<-unlist(as.vector(unique(weather[,SiteColID]))) 
   
   # Check if param list contains all required elements
-  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "BulkDensity", "WaterStressSensitivity", "FloweringSlope", "FloweringMax","k0","FruitWaterContentMin","FruitWaterContentMax","FruitWaterContentInc","FruitWaterContentDecreaseMax")
+  required_param_elements <- c("Tbase", "Topt", "Tmax", "Theat", "Tcold", "FIntMax", "CycleLength", "TransplantingLag", "FloweringLag", "HalfIntGrowth", "HalfIntSenescence",  "InitialInt", "RUE", "KcIni", "KcMax", "RootIncrease", "RootDepthMax", "RootDepthInitial", "FieldCapacity", "WiltingPoint", "DepletionFraction", "FloweringSlope", "FloweringMax","k0","FruitWaterContentMin","FruitWaterContentMax","FruitWaterContentInc","FruitWaterContentDecreaseMax")
   
   missing_param_elements <- setdiff(required_param_elements, names(param))
   if (length(missing_param_elements) > 0) {
@@ -597,8 +679,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   rootDepthInitial<-param$RootDepthInitial
   fieldCapacity <-param$FieldCapacity
   wiltingPoint <-param$WiltingPoint
-  bulkDensity<-param$BulkDensity
-  waterStressSensitivity<- - param$WaterStressSensitivity
+  DepletionFraction<- param$DepletionFraction
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
   k0<-param$k0
@@ -721,8 +802,8 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             if(ws < waterStressLevel & daysNoRain>=minimumTurn-1)
             {
               #compute soil water at field capacity
-              pwc1 <- 3 * (fieldCapacity )*bulkDensity*10
-              pwc2  <- (rootState-3)* (fieldCapacity )*bulkDensity*10
+              pwc1 <- 3 * (fieldCapacity )*10
+              pwc2  <- (rootState-3)* (fieldCapacity )*10
               soilWFC <- pwc1+pwc2
               
               #actual soil water
@@ -791,8 +872,18 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           if(length(outputs)>0 & phenoCode>=1)
           { 
             fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
-            fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
-            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntActRate
+            
+            fIntModifier<-0
+            if(fIntPotRate>0){
+              fIntModifier<-fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+            }
+            else
+            {
+              fIntModifier<-fIntPotRate*(1+(1-outputs[[as.character(doy-1)]][['waterStress']]))
+            }
+
+            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntModifier
+           
             if(fIntAct<0)
             {
               fIntAct<-0
@@ -822,9 +913,24 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             daysNoRain<-0
           }
           
+          #2. water stress TODO CHECK THE WEIGHTED AVERAGE
+          if (rootState>3)
+          {
+            wsAve = (wc1*3 + wc2 * (rootState-3))/(rootState)
+          }
+          else
+          {
+            wsAve = wc1
+          }
+
+          ftsw <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint )
+
+          
           #compute soil water dynamics
-          soilModel <- soilWaterModel(doy, outputs, waterStressSensitivity, irrigation, p,
-                                      rootState, rootRate, rootDepthInitial, rootDepthMax, etR, waterStressFactor, fIntAct, et0,daysNoRain,fieldCapacity, wiltingPoint, bulkDensity)
+          soilModel <- soilWaterModel(doy, outputs, ftsw, depletionFraction, irrigation, p,
+                                      rootState, rootRate, rootDepthInitial, rootDepthMax,
+                                      etR, waterStressFactor, fIntAct, et0,daysNoRain,
+                                      fieldCapacity, wiltingPoint, soilWaterInitial)
           
           trc1 <- soilModel[[1]]
           ev1 <- soilModel[[2]]
@@ -839,22 +945,10 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           dc3 <- soilModel[[11]]
           wc3mm <- soilModel[[12]]
           wc3 <- soilModel[[13]]
+          ws<-soilModel[[14]]
           
           
-          #2. water stress TODO CHECK THE WEIGHTED AVERAGE
-          wsAve = (wc1 + wc2)*.5
-          
-          if (rootState>3)
-          {
-            wsAve = (wc1*3 + wc2 * (rootState-3))/(rootState)
-          }
-          else
-          {
-            wsAve = wc1
-          }
-          
-          ws <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint ) 
-          if(ws>1) {ws<-1}
+          # if(ws>1) {ws<-1}
           
           ## Compute carbon rates and update the carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
@@ -871,7 +965,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
                                                 floweringSlope,floweringMax)
             floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
                                     outputs[[as.character(doy-1)]][['floweringStateIde']]) 
-            floweringRateAct <-floweringRateIde*(1-hs)
+            floweringRateAct <-floweringRateIde*(1-hs)*(1-cs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
                                      outputs[[as.character(doy-1)]][['floweringStateAct']])  
           }else{
@@ -1100,17 +1194,19 @@ fIntCompute<-function(fIntMax,cycleLength,
   halfIntGrowthGdd=cycleLength*halfIntGrowth/100
   halfIntSenescenceGdd=cycleLength*halfIntSenescence/100
   
+  steepGrowth<-.015
+  steepSenescence<-.007
   #light interception - growth phase 
   fIntGrowth<-fIntMax/
-    (1+exp(-0.01*(gdd-transplantingGdd- halfIntGrowthGdd)))
+    (1+exp(-steepGrowth*(gdd-transplantingGdd- halfIntGrowthGdd)))
   
   #light interception - senescence phase
   fIntSenescence<-fIntMax/
-    (1+exp(0.01*(gdd-halfIntSenescenceGdd)))
+    (1+exp(steepSenescence*(gdd-halfIntSenescenceGdd)))
   
   #light interception - end transplanting
-  fIntGrowthEndTransplanting<-1/
-    (1+exp(-0.01*(-halfIntGrowthGdd)))
+  fIntGrowthEndTransplanting<-fIntMax/
+    (1+exp(-steepGrowth*(-halfIntGrowthGdd)))
   
   #gap between light interception transplanting end and the initial interception
   gapTransplanting = fIntGrowthEndTransplanting-
@@ -1130,7 +1226,7 @@ fIntCompute<-function(fIntMax,cycleLength,
 carbonRate<-function(rue, radiation, fTemp, fInt, hs,cs,ws)
 {
   #TODO: the factor is multiplicative now!
-  carbonRate<-rue * radiation * .5 * fTemp * (1-hs)*(1-cs)*(ws)
+  carbonRate<-rue * radiation * .5 * fInt * fTemp * (1-hs)*(1-cs)*(ws)
   
   return(carbonRate)
 }
@@ -1142,10 +1238,10 @@ rootDepth<-function(rootIncrease,fTemp)
 }
 ## Water availability ----
 #main function for soil water content
-soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,rootState,
+soilWaterModel <- function(doy,outputs, ftsw, depletionFraction,irrigation,p,rootState,
                            rootRate,rootDepthInitial,rootDepthMax,etR, waterStressFactor,
                            fIntAct,et0,daysNoRain,fieldCapacity,
-                           wiltingPoint,bulkDensity)
+                           wiltingPoint,soilWaterInitial)
 {
   #2. Compute water stress factor from water stress of previous day
   if(length(outputs)>0) #check if it is the first day
@@ -1153,23 +1249,23 @@ soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,root
     wc1mm<-outputs[[as.character(doy-1)]][['wc1mm']]
     wc2mm<-outputs[[as.character(doy-1)]][['wc2mm']]
     wc3mm <-outputs[[as.character(doy-1)]][['wc3mm']]
-    ftsw <- outputs[[as.character(doy-1)]][['waterStress']]
+    # ftsw <- outputs[[as.character(doy-1)]][['waterStress']]
   }
   else
   {
-    aveSWC = (fieldCapacity+wiltingPoint)*.5
-    ftsw<-1
-    wc1mm<-(3)*bulkDensity*aveSWC *10
-    wc2mm<-(rootDepthInitial)*bulkDensity*aveSWC *10
-    wc3mm<-(rootDepthMax-rootDepthInitial)*bulkDensity*aveSWC*10
+    iniSWC = wiltingPoint + (fieldCapacity-wiltingPoint)*soilWaterInitial/100
+    #iniSWC=(wiltingPoint+fieldCapacity)*.5
+    # ftsw<-1
+    wc1mm<-(3)*iniSWC *10
+    wc2mm<-(rootDepthInitial)*iniSWC *10
+    wc3mm<-(rootDepthMax-rootDepthInitial)*iniSWC*10
   }
   
-  waterStressFactor<-waterStressFunction(ftsw,waterStressSensitivity)
+  waterStressFactor<- 1 - (waterStressFunction(ftsw,depletionFraction))
   
   #3. Compute soil water content
   wc1Function <- c1Content(irrigation,p,rootState,rootDepthMax,etR*waterStressFactor,
-                           fIntAct,et0,
-                           daysNoRain,fieldCapacity ,wiltingPoint,bulkDensity,wc1mm)
+                           fIntAct,et0,daysNoRain,fieldCapacity ,wiltingPoint,wc1mm)
   
   #4. Update variables
   trc1<-wc1Function[[1]]
@@ -1182,7 +1278,7 @@ soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,root
   ## Compute soil water content at layer 2 (rootDepth - 3)----
   #1. Compute soil water content
   wc2Function <- c2Content(dc1,rootRate,rootState,rootDepthMax,etR*waterStressFactor,
-                           fIntAct,et0,fieldCapacity ,wiltingPoint,bulkDensity,wc2mm,wc3mm)
+                           fIntAct,et0,fieldCapacity ,wiltingPoint,wc2mm,wc3mm)
   #2. Update variables
   trc2<-wc2Function[[1]]
   dc2<-wc2Function[[2]]
@@ -1193,7 +1289,7 @@ soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,root
   ## Compute soil water content at layer 3-unrooted zone (rootDepthMax - rootDepth)----
   #1. Compute soil water content
   wc3Function<-c3Content(dc2,rootState,rootDepthMax,
-                         fieldCapacity,wiltingPoint,bulkDensity,newSoil,wc3mm)
+                         fieldCapacity,wiltingPoint,newSoil,wc3mm)
   #2. Update variables
   dc3<-wc3Function[[1]]
   wc3mm<-wc3Function[[2]]
@@ -1202,13 +1298,13 @@ soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,root
   
   ## Compute water stress ----
   #1. Potential total water content at layer 1 and 2
-  pwc1 <- 3 * (fieldCapacity )*bulkDensity*10
-  pwc2  <- (rootState-3)* (fieldCapacity )*bulkDensity*10
+  pwc1 <- 3 * (fieldCapacity )*10
+  pwc2  <- (rootState-3)* (fieldCapacity )*10
   
   
   return(list(trc1,ev1,dc1,wc1mm,wc1,
               trc2,dc2,wc2mm,newSoil,wc2,
-              dc3,wc3mm,wc3))
+              dc3,wc3mm,wc3,waterStressFactor))
   
 }
 
@@ -1216,7 +1312,7 @@ soilWaterModel <- function(doy,outputs, waterStressSensitivity,irrigation,p,root
 # Water content at layer 1----
 #' @keywords internal 
 c1Content <- function(irrigation, p, rootState,rootDepthMax,
-                      etR, fInt,et0,daysNoRain,fieldCapacity ,wiltingPoint,bulkDensity, wc1mm)
+                      etR, fInt,et0,daysNoRain,fieldCapacity ,wiltingPoint,wc1mm)
 {
   trc1<-0
   #transpiration component
@@ -1228,13 +1324,13 @@ c1Content <- function(irrigation, p, rootState,rootDepthMax,
     trc1<-etR*3/rootState
   }
   
-  #evaporation component
+  #evaporation component TODO - this does not consider soil texture 
   dRE<-(1+daysNoRain)^.5-(daysNoRain)^.5
   ev1<-(1-fInt)*et0*dRE
   
   #soil water content max
-  swcMax <- 3*bulkDensity*fieldCapacity *10 #in mm 
-  swcMin <- 3*bulkDensity*wiltingPoint*10 #in mm
+  swcMax <- 3*fieldCapacity *10 #in mm 
+  swcMin <- 3*wiltingPoint*10 #in mm
   wc1mm <- wc1mm + irrigation+ p-trc1-ev1
   dc1<-0
   if (wc1mm >= swcMax)
@@ -1258,7 +1354,7 @@ c1Content <- function(irrigation, p, rootState,rootDepthMax,
 # Water content at layer 2----
 #' @keywords internal 
 c2Content <- function(dc1, rootRate, rootState,rootDepthMax, 
-                      etR, fInt,et0,fieldCapacity ,wiltingPoint,bulkDensity, wc2mm, wc3mm)
+                      etR, fInt,et0,fieldCapacity ,wiltingPoint,wc2mm, wc3mm)
 {
   trc2 <- 0
   
@@ -1267,8 +1363,8 @@ c2Content <- function(dc1, rootRate, rootState,rootDepthMax,
   newSoil <- rootRate*wc3mm/rootDepthMax
   
 
-  swcMax <- (rootState-3)*bulkDensity*fieldCapacity *10 #in mm 
-  swcMin <- (rootState-3)*bulkDensity*wiltingPoint*10 #in mm
+  swcMax <- (rootState-3)*fieldCapacity *10 #in mm 
+  swcMin <- (rootState-3)*wiltingPoint*10 #in mm
   wc2mm<-wc2mm + dc1 -trc2+newSoil
   #Drainage
   dc2<-0
@@ -1292,12 +1388,12 @@ c2Content <- function(dc1, rootRate, rootState,rootDepthMax,
 
     # Water content at layer 3----
 #' @keywords internal 
-c3Content <- function(dc2, rootState,rootDepthMax, fieldCapacity ,wiltingPoint,bulkDensity, newSoil, wc3mm)
+c3Content <- function(dc2, rootState,rootDepthMax, fieldCapacity ,wiltingPoint,newSoil, wc3mm)
 {
   
   #SWC max
-  swcMax <- (rootDepthMax-rootState)*bulkDensity*fieldCapacity *10 #in mm 
-  swcMin <- (rootDepthMax-rootState)*bulkDensity*wiltingPoint*10 #in mm
+  swcMax <- (rootDepthMax-rootState)*fieldCapacity *10 #in mm 
+  swcMin <- (rootDepthMax-rootState)*wiltingPoint*10 #in mm
   wc3mm<-wc3mm+ dc2-newSoil
   #Drainage
   dc3<-0
@@ -1320,9 +1416,17 @@ c3Content <- function(dc2, rootState,rootDepthMax, fieldCapacity ,wiltingPoint,b
 
 ## Water stress factor
 #' @keywords internal 
-waterStressFunction<- function(ftsw, waterStressSensitivity)
+waterStressFunction<- function(ftsw, depletionFraction)
 {
-  WSfactor <- -1+2/(1+exp(waterStressSensitivity*ftsw))
+  if(ftsw >= depletionFraction)
+  {
+    WSfactor <- 0
+  }
+  else
+  {
+    WSfactor <- 1-(ftsw / depletionFraction)
+  }
+  #WSfactor <- -1+2/(1+exp(waterStressSensitivity*ftsw))
   return(WSfactor)
 }
 
@@ -1331,32 +1435,56 @@ waterStressFunction<- function(ftsw, waterStressSensitivity)
 radiationCompute<-function(latitude, doy, tMax, tMin)
 {
   # Constants
-  solarConstant <- 0.0820 # Solar constant [MJ m^-2 min^-1]
+  solarConstant <- 0.0820 # MJ m^-2 min^-1
   
   # Convert latitude from degrees to radians
   latitudeRad <- latitude * pi / 180
   
-  # Calculate the solar declination
+  # Solar declination (rad)
   solarDeclination <- 0.409 * sin((2 * pi / 365) * doy - 1.39)
   
-  # Calculate the sunset hour angle
+  # Inverse relative distance Earth-Sun (dr)
+  dr <- 1 + 0.033 * cos((2 * pi / 365) * doy)
+  
+  # Sunset hour angle (rad)
   sunsetHourAngle <- acos(-tan(latitudeRad) * tan(solarDeclination))
   
-  # Calculate the extraterrestrial radiation (Ra) in MJ m^-2 day^-1
-  ra <- (24 * 60 / pi) * solarConstant * 
-    (sunsetHourAngle * sin(latitudeRad) * sin(solarDeclination) + 
+  # Extraterrestrial radiation (Ra) [MJ m^-2 day^-1]
+  ra <- (24 * 60 / pi) * solarConstant * dr *
+    (sunsetHourAngle * sin(latitudeRad) * sin(solarDeclination) +
        cos(latitudeRad) * cos(solarDeclination) * sin(sunsetHourAngle))
   
   # Calculate the mean daily temperature
   tMean <- (tMax + tMin) / 2
   
   # Calculate the Hargreaves coefficient
-  hargreavesCoefficient <- 0.0023
+  hargreavesCoefficient <- 0.17
   
   # Calculate the radiation (rs) in MJ m^-2 day^-1
-  rs <- hargreavesCoefficient * ra * sqrt(tMax - tMin) * (tMean + 17.8)
+  rs <- hargreavesCoefficient * ra * sqrt(tMax - tMin)
   
   return(rs)
+}
+
+et0Compute<-function(latitude, doy, tMax, tMin)
+{
+  solarConstant <- 0.0820 # MJ m^-2 min^-1
+  lambda <- 2.45          # MJ/kg (MJ/mm for water)
+  
+  latitudeRad <- latitude * pi / 180
+  solarDeclination <- 0.409 * sin((2 * pi / 365) * doy - 1.39)
+  dr <- 1 + 0.033 * cos((2 * pi / 365) * doy)
+  sunsetHourAngle <- acos(-tan(latitudeRad) * tan(solarDeclination))
+  
+  ra <- (24 * 60 / pi) * solarConstant * dr *
+    (sunsetHourAngle * sin(latitudeRad) * sin(solarDeclination) +
+       cos(latitudeRad) * cos(solarDeclination) * sin(sunsetHourAngle))
+  
+  ra_mm <- ra / lambda   # convert MJ/m²/day → mm/day
+  tMean <- (tMax + tMin) / 2
+  
+  ET0 <- 0.0023 * (tMean + 17.8) * sqrt(tMax - tMin) * ra_mm
+  return(ET0)
 }
 
 #Flowering dynamics ----
@@ -1376,7 +1504,6 @@ floweringDynamics<-function(cycleCompletion, floweringLag, floweringSlope,flower
   return(flowering)
 }
 
-
 #BRIX ----
 #' @keywords internal
 BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
@@ -1392,8 +1519,11 @@ BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
   
     carbonSugarFunction<-carbonSugar(kt_aux,dm_rate,dm_state,dayLength,carbonSugar_y,
                                      gammaCarbon,gammaSugar)
+    #output of the function
     carbonSugarRate<-carbonSugarFunction[[1]]
     carbonSugarState<-carbonSugarFunction[[2]]
+    
+    #call the fruit water content
     fruitWaterContentFunction <- fruitWaterContent(fruitWaterContentMin,fruitWaterContentMax,
                                               fruitWaterContentInc,cycleCompletion,floweringLag,
                                               fruitWaterContentSensitivity,waterStress,
@@ -1431,6 +1561,9 @@ BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
     brixPot<-0
     brixAct<-0
     
+    
+    
+    
   }
   return(list(kt_aux,carbonSugarRate,carbonSugarState,
               fruitWaterContentPot,fruitWaterContentPotRate,
@@ -1467,6 +1600,7 @@ carbonSugar<-function(kt,dm_rate,dm_state,dayLength,carbonSugar_1,
   if(kt>0.025) #HOURLY LOOP
   {
     DM_rate_lightHours = dm_rate/as.integer(dayLength)
+   
     hourSunrise <- as.integer((24- dayLength)/2)
     hourSunset <- hourSunrise + dayLength  # End point of light
     # Create DMrate_h with exactly 24 hours
@@ -1482,17 +1616,19 @@ carbonSugar<-function(kt,dm_rate,dm_state,dayLength,carbonSugar_1,
     carbonSugarRate_in_hour<-0
     carbonSugarRate_out_hour<-0
     hour<-1
+    
     #BEGIN HOURLY LOOP
     for(hour in 1:24)
     {
       #to manage the change of day
       if(hour == 1){#assign to the first hour the value of the last hour of the previous day 
-        carbonSugarState_hour = carbonSugarState_h[[24]]
+        # TODO: check if it is 0 at the first hour, possibly use 'carbonSugar_1'
+        #carbonSugarState_hour = carbonSugarState_h[[24]]
+        carbonSugarState_hour = carbonSugar_1
       }else {#otherwise assign the value of the previous hour
         carbonSugarState_hour = carbonSugarState_h[[hour-1]]}
       
       #define the carbon flow from the phloem - gC m-2 h-1
-      if(is.na(DMrate_h[hour])){cat(paste('ECCO!!!',hour,DMrate_h))}
       carbonSugarRate_in <- DMrate_h[hour] * gammaCarbon
       #define the carbon used to synthesize other compounds scaled to hourly - gC m-2 h-1
       carbonSugarRate_out <- carbonSugarState_hour * kt * 1/24 
@@ -1508,18 +1644,23 @@ carbonSugar<-function(kt,dm_rate,dm_state,dayLength,carbonSugar_1,
     }
     
     #END HOURLY LOOP
+    #TODO: do not consider it when there is a hourly loop
     carbonSugarRateDay <- carbonSugarRate_in_hour-carbonSugarRate_out_hour
     #assign the variable
-    carbonSugarStateDay <- carbonSugar_1 + carbonSugarState_h[[24]]  }
+    #carbonSugarStateDay <- carbonSugar_1 + carbonSugarState_h[[24]]  
+    #TODO: changed 21/07
+    carbonSugarStateDay <- carbonSugarState_h[[24]]  
+    
+  }
   else
   {
     #define the carbon flow from the phloem - gC m-2 d-1
     carbonSugarRate_in <- dm_rate * gammaCarbon
     #define the carbon used to synthesize other compounds - gC m-2 d-1
     carbonSugarState_d <- carbonSugar_1
-    carbonSugarRate_out <- carbonSugarState_d * kt	
+    carbonSugarRate_out <- carbonSugarState_d * kt
     #compute the carbon rate in sugar gC d-1
-    carbonSugarRateDay <- carbonSugarRate_in - carbonSugarRate_out 
+    carbonSugarRateDay <- carbonSugarRate_in - carbonSugarRate_out
     # integrate the state variable of carbon in sugar - gC m-2 d-1
     carbonSugarStateDay <- carbonSugar_1 + carbonSugarRateDay
   }

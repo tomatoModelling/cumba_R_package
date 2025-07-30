@@ -35,3 +35,28 @@ a dataframe containing the weatherDf plus the daily outputs of the cumba model
 \description{
 It is a daily time step simulation model which computes the yield and brix degree of a tomato crop as a function of weather data and irrigation options.
 }
+\examples{
+#' # Example weather dataframe
+weather <- data.frame(
+  Site = "TestSite",
+  Tx = c(30, 32, 31),
+  Tn = c(20, 21, 19),
+  P = c(0, 5, 2),
+  DATE = as.Date(c("2025-06-01", "2025-06-02", "2025-06-03")),
+  Lat = 40
+)
+
+# Minimal parameters: use default package data
+params <- lapply(cumbaParameters, function(p) p)  # copy default parameters
+
+# Run the model in automatic irrigation (scenario) mode
+# result <- cumba_scenario(
+#   weather,
+#   params,
+#   estimateRad = TRUE,
+#   estimateET0 = TRUE,
+#   waterStressLevel = 0.5,
+#   minimumTurn = 4
+# )
+
+}

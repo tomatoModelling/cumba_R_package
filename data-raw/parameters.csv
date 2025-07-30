@@ -12,15 +12,15 @@ HalfIntGrowth,Percentage of crop cycle when light interception is 50% in the gro
 HalfIntSenescence,Percentage of crop cycle when light interception is 50% in the senescence phase,unitless,95,70,95
 InitialInt,Inital light interception,unitless,0.05,0.05,0.15
 RUE,Maximum radiation use efficiency,g MJ-1,2.3,2,3.5
-KcIni,Initial crop coefficient for transpiration,unitless,0.1,0.1,0.2
-KcMax,Maximum crop coefficient for transpiration,unitless,1.5,0.9,1.2
+KcIni,Initial crop coefficient for transpiration,unitless,0.3,0.1,0.5
+KcMax,Maximum crop coefficient for transpiration,unitless,1.15,0.9,1.25
 RootIncrease,Daily maximum root increase rate,cm,1,0.5,1.5
 RootDepthMax,Maximum root depth,cm,60,50,100
 RootDepthInitial,Initial root depth,cm,6,2,6
-FieldCapacity,Field Capacity (lo togliamo da qua?),%,0.3,0.2,0.45
+SoilWaterInitial,Initial soil water content (100 = field capacity 0 = wilting point),% AWC,50,0,100
+FieldCapacity,Field Capacity,%,0.3,0.2,0.45
 WiltingPoint,Wilting Point,%,0.1,0.05,0.15
-BulkDensity,Bulk density,t ha-1,1.2,0.6,1.8
-WaterStressSensitivity,Crop sensitivity to drought stress,unitless,3,0.5,4.5
+DepletionFraction,Average percentage of total available soil water that can be depleted from the root zone before moisture stress (reduction in ET) occurs,% AWC,40,20,60
 FloweringSlope,Slope of the flowering curve,unitless,0.4,0.25,0.5
 FloweringMax,Percentage of the crop cycle when flowering is maximum,unitless,80,40,80
 k0,initial rate of sugar consumption for synthesis of other compounds,unitless,4,3,6

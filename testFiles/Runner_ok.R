@@ -13,7 +13,6 @@ library(remotes)
 #install_github("tomatoModelling/cumba_R_package",force=T)
 library(cumba)
 
-
 # Set this directory as the working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -45,23 +44,91 @@ weather<-weather |>
 
 #source("..//R//Main.R")
 options(scipen = 999)
+
+yieldRed<-all_sheets[[5]] |> 
+  filter(ID==3)
+units<-all_sheets[[1]]
+source('..//R//Main.R')
+
+par<-cumba::cumbaParameters
+par$RUE$value=3.5
+par$FloweringLag$value=20
+par$k0$value<-4
+par$FruitWaterContentMax$value<-0.93
+par$FruitWaterContentDecreaseMax$value<-0.002
+par$Tbase$value<-10
+par$Topt$value<-25
+par$Tmax$value<-35
+par$CycleLength$value
 ##call the cumba function
-#outputs<-cumba_experiment(weather, param, 
-#                          estimateRad = T, estimateET0 = T,
-#                          irrigation_df)   
-#ggplot(outputs)+
-#  geom_line(aes(x=doy,y=brixPot))+
-#  geom_line(aes(x=doy,y=brixAct),col='blue')+
-#  geom_line(aes(x=doy,y=carbonSugarState/50),col='red')+
-#  geom_line(aes(x=doy,y=fruitWaterContentAct*2),col='cyan')+
-#  geom_line(aes(x=doy,y=fruitWaterContentPot*2),col='cyan4')+
-#  theme_bw()+
-#  xlim(160,240)+
-#  #ylim(param$FruitWaterContentMin,param$FruitWaterContentMax)+
-#  facet_wrap(~experiment,ncol=8)+
-#  theme(strip.background = element_blank(),
-#        strip.text.x = element_blank())
-#
+outputs<-cumba_experiment(weather, par,
+                         estimateRad = T, estimateET0 = T,
+                         irrigation_df) 
+
+phenoObs<-all_sheets[[3]] |> 
+  mutate(doy=yday(DATE),year=year(DATE)) |> 
+  rename(experiment=ID)
+
+
+phenoCheck<-outputs |> 
+  left_join(phenoObs) |> 
+  select(year,experiment,PHENO,doy,gddState) |> 
+  left_join(cycleCheck<-outputs |> 
+              group_by(experiment) |> 
+              slice_tail()|> 
+              select(experiment,gddState) |> 
+              rename(gddEnd=gddState),by=c('experiment')) |> 
+  filter(!is.na(PHENO)) |> 
+  filter(!(experiment==29&PHENO=='S0'), !(experiment==13&PHENO=='S2'&doy==216)) |> 
+  mutate(cyclePerc=gddState/gddEnd*100) |> 
+  ungroup() |> 
+  group_by(factor(PHENO)) |>
+    dplyr::summarise(cycle_perc_mu=mean(cyclePerc),
+                     cycle_perc_med=median(cyclePerc))
+
+ggplot(phenoCheck)+geom_boxplot(aes(x=1,y=gddState,fill=PHENO))+
+  facet_wrap(~phase_string,scales='free')
+
+cycleCheck<-outputs |> 
+  group_by(year) |> 
+  slice_tail() |> 
+  select(year,experiment,gddState) |> 
+  ungroup() |> 
+  dplyr::summarise(gdd_med=median(gddState),
+            gdd_mean=mean(gddState))
+
+
+debug_model <- outputs |> 
+  filter(experiment==3) |> 
+  select(year,experiment,doy,phenoStage,
+         carbonStateAct,carbonSugarRate,carbonSugarState,
+         brixAct,fruitFreshWeightAct,kt)
+
+ggplot(debug_model) + 
+  #geom_area(aes(x=doy,y=fruitFreshWeightAct/10),col='black',alpha=.4)+
+  geom_line(aes(x=doy,y=carbonStateAct),col='red')+
+  geom_line(aes(x=doy,y=carbonSugarState))+
+  geom_line(aes(x=doy,y=carbonStateAct-carbonSugarState),col='green3')
+  # geom_line(aes(x=doy,y=brixAct),col='blue')+
+  # geom_line(aes(x=doy,y=kt),col='black')+
+
+  
+
+
+
+ggplot(outputs)+
+ geom_line(aes(x=doy,y=brixPot))+
+ geom_line(aes(x=doy,y=brixAct),col='blue')+
+ geom_line(aes(x=doy,y=carbonSugarState/50),col='red')+
+ geom_line(aes(x=doy,y=fruitWaterContentAct*2),col='cyan')+
+ geom_line(aes(x=doy,y=fruitWaterContentPot*2),col='cyan4')+
+ theme_bw()+
+ xlim(160,240)+
+ #ylim(param$FruitWaterContentMin,param$FruitWaterContentMax)+
+ facet_wrap(~experiment,ncol=8)+
+ theme(strip.background = element_blank(),
+       strip.text.x = element_blank())
+
 #
 #
 #
@@ -69,8 +136,8 @@ options(scipen = 999)
 #write.csv(outputs,"testBrix3.csv")
 #call the cumba function----
 #
-param
-cumba::cumbaParameters
+
+
 outputs<-cumba_scenario( weather, cumbaParameters, estimateRad = T,estimateET0 = T,120,
                         waterStressLevel=.2, minimumTurn = 10)  
 
