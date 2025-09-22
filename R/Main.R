@@ -125,6 +125,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   fieldCapacity <-param$FieldCapacity
   wiltingPoint <-param$WiltingPoint
   depletionFraction<- param$DepletionFraction/100
+  waterStressSensitivity<- -param$WaterStressSensitivity
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
   k0<-param$k0
@@ -134,6 +135,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   fruitWaterContentDecreaseMax<-param$FruitWaterContentDecreaseMax
   soilWaterInitial <- param$SoilWaterInitial
   
+  
   #compute maximum value of the double logistic for flowering
   x<-seq(0:100)
   floweringPotentialFunction<-sapply(x, floweringDynamics, floweringSlope=floweringSlope,       floweringLag=floweringLag, floweringMax=floweringMax)
@@ -141,7 +143,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   
   #Define the output vector with column names for the results dataframe ----
   outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
-                'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',
+                'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState','ftsw',
                 'trc1','ev1','dc1','wc1mm','daysNoRain',
                 'trc2','dc2','wc2mm','dc3','wc3mm','wc1',"wc2","wc3",
                 'waterStress','heatStress','coldStress','fIntPot','fIntAct',
@@ -371,7 +373,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
                          rootState, rootRate, rootDepthInitial, rootDepthMax, etR,
                          waterStressFactor, fIntAct,
                          et0,daysNoRain,fieldCapacity, wiltingPoint,
-                         soilWaterInitial)
+                         soilWaterInitial, waterStressSensitivity)
           #assign local variables
           trc1 <- soilModel[[1]]
           ev1 <- soilModel[[2]]
@@ -477,7 +479,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           ## Populate output variables----
           outputs[[as.character(doy)]]<-setNames(list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
-              gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, 
+              gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
               trc1, ev1, dc1, wc1mm, daysNoRain, 
               trc2, dc2, wc2mm, 
               dc3, wc3mm,
@@ -680,6 +682,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   fieldCapacity <-param$FieldCapacity
   wiltingPoint <-param$WiltingPoint
   DepletionFraction<- param$DepletionFraction
+  waterStressSensitivity <- -param$WaterStressSensitivity
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
   k0<-param$k0
@@ -930,7 +933,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           soilModel <- soilWaterModel(doy, outputs, ftsw, depletionFraction, irrigation, p,
                                       rootState, rootRate, rootDepthInitial, rootDepthMax,
                                       etR, waterStressFactor, fIntAct, et0,daysNoRain,
-                                      fieldCapacity, wiltingPoint, soilWaterInitial)
+                                      fieldCapacity, wiltingPoint, soilWaterInitial,waterStressSensitivity)
           
           trc1 <- soilModel[[1]]
           ev1 <- soilModel[[2]]
@@ -1241,7 +1244,7 @@ rootDepth<-function(rootIncrease,fTemp)
 soilWaterModel <- function(doy,outputs, ftsw, depletionFraction,irrigation,p,rootState,
                            rootRate,rootDepthInitial,rootDepthMax,etR, waterStressFactor,
                            fIntAct,et0,daysNoRain,fieldCapacity,
-                           wiltingPoint,soilWaterInitial)
+                           wiltingPoint,soilWaterInitial, waterStressSensitivity)
 {
   #2. Compute water stress factor from water stress of previous day
   if(length(outputs)>0) #check if it is the first day
@@ -1261,7 +1264,7 @@ soilWaterModel <- function(doy,outputs, ftsw, depletionFraction,irrigation,p,roo
     wc3mm<-(rootDepthMax-rootDepthInitial)*iniSWC*10
   }
   
-  waterStressFactor<- 1 - (waterStressFunction(ftsw,depletionFraction))
+  waterStressFactor<- 1 - (waterStressFunction(ftsw,depletionFraction,waterStressSensitivity))
   
   #3. Compute soil water content
   wc1Function <- c1Content(irrigation,p,rootState,rootDepthMax,etR*waterStressFactor,
@@ -1416,7 +1419,7 @@ c3Content <- function(dc2, rootState,rootDepthMax, fieldCapacity ,wiltingPoint,n
 
 ## Water stress factor
 #' @keywords internal 
-waterStressFunction<- function(ftsw, depletionFraction)
+waterStressFunction<- function(ftsw, depletionFraction,waterStressSensitivity)
 {
   if(ftsw >= depletionFraction)
   {
@@ -1424,7 +1427,10 @@ waterStressFunction<- function(ftsw, depletionFraction)
   }
   else
   {
-    WSfactor <- 1-(ftsw / depletionFraction)
+    #WSfactor <- 1-(1/(1+exp(-20*(ftsw-depletionFraction/2)) ))
+    #(ftsw / depletionFraction)
+    WSfactor <- 1-((exp(ftsw*waterStressSensitivity)-1)/(exp(waterStressSensitivity)-1))
+    
   }
   #WSfactor <- -1+2/(1+exp(waterStressSensitivity*ftsw))
   return(WSfactor)
@@ -1483,7 +1489,7 @@ et0Compute<-function(latitude, doy, tMax, tMin)
   ra_mm <- ra / lambda   # convert MJ/m²/day → mm/day
   tMean <- (tMax + tMin) / 2
   
-  ET0 <- 0.0023 * (tMean + 17.8) * sqrt(tMax - tMin) * ra_mm
+  ET0 <- 0.002 * (tMean + 17.8) * sqrt(tMax - tMin) * ra_mm
   return(ET0)
 }
 
