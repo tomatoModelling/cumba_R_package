@@ -275,7 +275,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           }
           
           #compute gdd
-          gdd<-gdd(tAve,tBase,tOpt,tMax) #Growing degree day
+          gdd<-gdd_compute(tAve,tBase,tOpt,tMax) #Growing degree day
           gddRate <- round(gdd*(tOpt-tBase),2) #Growing degree day rate
           gddState <- gddState + gddRate #Growing degree day state
           cycleCompletion <- gddState/cycleLength*100 # Cycle completion percentage
@@ -583,8 +583,12 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
 #' # )
 #'
 #' @export
-cumba_scenario <- function(weather, param, estimateRad=T, 
-                           estimateET0=T,transplantingDOY=120,waterStressLevel=.5, minimumTurn = 4)
+cumba_scenario <- function(weather, param, 
+                           estimateRad=T, 
+                           estimateET0=T,
+                           transplantingDOY=120,
+                           waterStressLevel=.5, 
+                           minimumTurn = 4)
 {
   # convert param list
   if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
@@ -681,8 +685,8 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   rootDepthInitial<-param$RootDepthInitial
   fieldCapacity <-param$FieldCapacity
   wiltingPoint <-param$WiltingPoint
-  DepletionFraction<- param$DepletionFraction
-  waterStressSensitivity <- -param$WaterStressSensitivity
+  depletionFraction<- param$DepletionFraction/100
+  waterStressSensitivity<- -param$WaterStressSensitivity
   floweringSlope<-param$FloweringSlope
   floweringMax<-param$FloweringMax
   k0<-param$k0
@@ -690,7 +694,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   fruitWaterContentMax <- param$FruitWaterContentMax
   fruitWaterContentInc <- param$FruitWaterContentInc
   fruitWaterContentDecreaseMax<-param$FruitWaterContentDecreaseMax
-  
+  soilWaterInitial <- param$SoilWaterInitial
   
   #compute maximum value of the double logistic for flowering
   x<-seq(0:100)
@@ -700,7 +704,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   
   #Define the output vector with column names for the results dataframe ----
   outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
-                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState',
+                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState','ftsw',
                  'trc1','ev1','dc1','wc1mm','daysNoRain',
                  'trc2','dc2','wc2mm','dc3','wc3mm','wc1',"wc2","wc3",
                  'waterStress','heatStress','coldStress','fIntPot','fIntAct',
@@ -719,6 +723,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   
   
   
+  
   #Initialize lists to store outputs at different levels (years, experiments, sites)----
   outputs<-list()
   outputsYear<-list()
@@ -734,7 +739,6 @@ cumba_scenario <- function(weather, param, estimateRad=T,
   gammaSugar<-.42
   for(site in 1:length(sites))
   {
-   
     thisSite<-sites[site][[1]]
     
     # Subset the weather data for the current site
@@ -747,7 +751,6 @@ cumba_scenario <- function(weather, param, estimateRad=T,
     DOYColID<-which(colnames(dfSite) == "doy")
     
     ##Iterate through each year  ----    
-    
     # List of unique years for the current site
     years<-unlist(as.vector(unique(dfSite[,"year"]))) 
     
@@ -759,7 +762,6 @@ cumba_scenario <- function(weather, param, estimateRad=T,
       availableYears <- years
       idsYear<- data.frame(ID = rep(year,  length(availableYears)),
                              YEAR = years)
-      
       
       #Iterate through each experiment in the current year ----    
       #TODO: for debug
@@ -783,6 +785,8 @@ cumba_scenario <- function(weather, param, estimateRad=T,
         rootState<-rootDepthInitial
         daysNoRain<-0
         ws<-1
+        wc1_y<-wiltingPoint+((fieldCapacity-wiltingPoint)*(soilWaterInitial/100))
+        wc2_y<-wc1_y
         
         # Current year being processed 
         thisYear <- years[year][[1]]
@@ -792,14 +796,15 @@ cumba_scenario <- function(weather, param, estimateRad=T,
         
         # Iterate through each day in the current year ----       
         #TODO: for debug
-        day<-2
+        day<-120
         outputs<-list() #clean the list each year
         for(day in 1:nrow(dfYear))
         {
           doy <- dfYear[day,DOYColID][[1]] #Day of the year
           # Current date being processed
           date<-(dfYear[day,1])[[1]]
-          if(doy>=transplantingDOY && transplantingDOY+150)
+          #150 days is the maximum duration of the tomato cycle (5 months)
+          if(doy>=transplantingDOY && doy <= transplantingDOY+150)
           {
             #run in scenario mode --> trigger irrigation based on conditions
             if(ws < waterStressLevel & daysNoRain>=minimumTurn-1)
@@ -833,16 +838,16 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           {
             radSim <- round(as.numeric(dfYear[day,RadColID]),2) #Radiation, MJ m-2 d-1
           }
+          #ET0
           et0<-0
-          if(estimateET0 == T)
-          {
-            et0<-0.008*(tAve+17.78)*radSim #Evapotranspiration-Hargreaves method, mm d-1
-          }else
-          {
-            et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #Evapotranspiration, mm d-1
+          if(estimateET0 == T){
+            et0<-et0Compute(Lat,doy,tX,tN)
+          }else{
+            et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #ET0, mm d-1
           }
+          
           #compute gdd
-          gdd<-gdd(tAve,tBase,tOpt,tMax) #Growing degree day
+          gdd<-gdd_compute(tAve,tBase,tOpt,tMax) #Growing degree day
           gddRate <- round(gdd*(tOpt-tBase),2) #Growing degree day rate
           gddState <- gddState + gddRate #Growing degree day state
           cycleCompletion <- gddState/cycleLength*100 # Cycle completion percentage
@@ -872,9 +877,9 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           fIntPot<-fIntCompute(fIntMax,cycleLength,transplantingLag,halfIntGrowth,
                                halfIntSenescence,initialInt,gddState)
           
-          if(length(outputs)>0 & phenoCode>=1)
-          { 
+          if(length(outputs)>0 & phenoCode>=1){ 
             fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
+            fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
             
             fIntModifier<-0
             if(fIntPotRate>0){
@@ -884,19 +889,16 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             {
               fIntModifier<-fIntPotRate*(1+(1-outputs[[as.character(doy-1)]][['waterStress']]))
             }
-
+            
             fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntModifier
-           
-            if(fIntAct<0)
-            {
-              fIntAct<-0
+            
+            if(fIntAct<0){
+              fIntAct=0
             }
-            if(fIntPot<0)
-            {
-              fIntPot<-0
+            if(fIntPot<0){
+              fIntPot=0
             }
-          }else
-          {
+          }else{
             fIntPotRate = fIntPot
             fIntActRate = fIntPot
             fIntAct = fIntPot
@@ -916,25 +918,34 @@ cumba_scenario <- function(weather, param, estimateRad=T,
             daysNoRain<-0
           }
           
-          #2. water stress TODO CHECK THE WEIGHTED AVERAGE
-          if (rootState>3)
+          
+          #ftsw calculation
+          if(length(outputs)>0)
           {
-            wsAve = (wc1*3 + wc2 * (rootState-3))/(rootState)
+            wc1_y <- outputs[[as.character(doy-1)]][['wc1']]
+            wc2_y <- outputs[[as.character(doy-1)]][['wc2']]
           }
-          else
+          
+          if (rootState>3){
+            wsAve = (wc1_y*3 + wc2_y * (rootState-3))/(rootState)
+          }else
           {
-            wsAve = wc1
+            wsAve = wc1_y
           }
-
+          
+          #water stress
           ftsw <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint )
-
+          if(ftsw>1) {ftsw <- 1}
+          
           
           #compute soil water dynamics
-          soilModel <- soilWaterModel(doy, outputs, ftsw, depletionFraction, irrigation, p,
-                                      rootState, rootRate, rootDepthInitial, rootDepthMax,
-                                      etR, waterStressFactor, fIntAct, et0,daysNoRain,
-                                      fieldCapacity, wiltingPoint, soilWaterInitial,waterStressSensitivity)
-          
+          soilModel <- soilWaterModel(doy, outputs, ftsw,
+                                      depletionFraction, irrigation, p,
+                                      rootState, rootRate, rootDepthInitial, rootDepthMax, etR,
+                                      waterStressFactor, fIntAct,
+                                      et0,daysNoRain,fieldCapacity, wiltingPoint,
+                                      soilWaterInitial, waterStressSensitivity)
+          #assign local variables
           trc1 <- soilModel[[1]]
           ev1 <- soilModel[[2]]
           dc1 <- soilModel[[3]]
@@ -948,7 +959,8 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           dc3 <- soilModel[[11]]
           wc3mm <- soilModel[[12]]
           wc3 <- soilModel[[13]]
-          ws<-soilModel[[14]]
+          ws <- soilModel[[14]]
+          
           
           
           # if(ws>1) {ws<-1}
@@ -1039,7 +1051,7 @@ cumba_scenario <- function(weather, param, estimateRad=T,
           ## Populate output variables----
           outputs[[as.character(doy)]]<-setNames(list(
             thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
-            gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, 
+            gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
             trc1, ev1, dc1, wc1mm, daysNoRain, 
             trc2, dc2, wc2mm, 
             dc3, wc3mm,
@@ -1148,7 +1160,7 @@ etRCompute<-function(et0,fInt,kcIni,kcMax)
 
 ## Phenology (Yan and Hunt, 1999 https://www.ggebiplot.com/Yan-Hunt1999a.pdf)----# GDD ----
 #' @keywords internal 
-gdd<-function(tAve,tBase,tOpt,tMax)
+gdd_compute<-function(tAve,tBase,tOpt,tMax)
 {
   firstTerm<-(tMax-tAve)/(tMax-tOpt)
   secondTerm<-(tAve-tBase)/(tOpt-tBase)
@@ -1464,7 +1476,7 @@ radiationCompute<-function(latitude, doy, tMax, tMin)
   tMean <- (tMax + tMin) / 2
   
   # Calculate the Hargreaves coefficient
-  hargreavesCoefficient <- 0.17
+  hargreavesCoefficient <- 0.155
   
   # Calculate the radiation (rs) in MJ m^-2 day^-1
   rs <- hargreavesCoefficient * ra * sqrt(tMax - tMin)
@@ -1489,7 +1501,7 @@ et0Compute<-function(latitude, doy, tMax, tMin)
   ra_mm <- ra / lambda   # convert MJ/m²/day → mm/day
   tMean <- (tMax + tMin) / 2
   
-  ET0 <- 0.002 * (tMean + 17.8) * sqrt(tMax - tMin) * ra_mm
+  ET0 <- 0.0023 * (tMean + 17.8) * sqrt(tMax - tMin) * ra_mm
   return(ET0)
 }
 

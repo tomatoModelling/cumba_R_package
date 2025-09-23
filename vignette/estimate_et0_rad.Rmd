@@ -1,0 +1,113 @@
+---
+title: "Calibration of ET₀ and Radiation for Tomato Irrigation with cumbà"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Calibration of ET₀ and Radiation for Tomato Irrigation with cumbà}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+css: vignette.css
+---
+
+<style>
+.main-container { max-width: 1200px !important; }
+table, .table, .table-condensed { font-size: 85% !important; }
+caption { white-space: nowrap; }
+</style>
+
+# 🎯 Goal
+
+This vignette demonstrates how to use cumbà to assist tomato farmers in irrigation scheduling by calibrating and estimating reference evapotranspiration (ET₀) and solar radiation (RAD) using weather station data.
+
+The workflow follows three progressive steps:
+
+- Calibration: estimate ET₀ and RAD parameters using a subset of weather station records.
+- Parameter averaging: derive robust mean coefficients across calibration sites/periods.
+- Validation: apply averaged parameters to independent datasets and compare estimated vs observed ET₀ and RAD.
+
+We rely on open access weather data (NASA POWER or local agromet stations) and simple crop metadata (sowing/harvest dates for tomato experiments).
+
+```{r options, echo=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4,
+  message = FALSE, warning = FALSE
+)
+```
+
+# 📦 Packages
+We load cumbà plus helper libraries for wrangling, visualization, and reproducible tables.
+
+```{r libraries, echo=T}
+library(cumba)
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(kableExtra)
+```
+
+# 📥 Data loading
+
+We use two data sources:
+
+- weather_data: daily records from a weather station (temperature, humidity, wind, sunshine or cloud cover).
+- reference_data: observed ET₀ (from lysimeter or FAO-56 Penman–Monteith reference calculations).
+
+# 🛰 Weather station data
+
+Example: daily max/min temperature, humidity, wind speed, and sunshine hours for a tomato-growing region.
+
+# 🧪 Step 1 – Calibration of ET₀ and RAD
+
+We calibrate ET₀ and RAD estimation methods against observed reference data.
+
+👉 Workflow:
+
+- Select a subset of days/sites for calibration.
+- Estimate ET₀ and RAD using initial formulae (e.g., Hargreaves, Angström, FAO-56 PM).
+- Adjust coefficients (α, β, Krs) via optimization.
+- Collect estimated parameters.
+
+```{r simulations, echo=T}
+
+source("C:\\Users\\Administrator\\OneDrive - CREA\\Desktop\\model dev\\cumba\\cumba_R_package\\R\\Main.R")
+
+weather_df <- read.csv("C:\\Users\\Administrator\\OneDrive - CREA\\Desktop\\model dev\\cumba\\cumba_R_package\\testFiles\\weather_foggia.csv") |> 
+  mutate(Rg=as.numeric(Rg),
+         ET0 = as.numeric(ET0),
+         date = as.Date(MDATE,format='%m/%d/%Y'),
+         doy=yday(date),
+         year=year(date)) |> 
+  rename(Tx=TMAX,Tn=TMIN,P=RAIN,DATE=date) |> 
+  mutate(Site='Foggia',Lat=41.2645)
+
+ggplot(weather_df, aes(x=doy))+
+  stat_summary(geom='ribbon',aes(y=Rg))+
+  stat_summary(geom='ribbon',aes(y=ET0),fill='blue')
+
+weather<-weather_df |> filter(year(DATE)==1951)
+param<-cumba::cumbaParameters
+out<-cumba_scenario(weather_df,
+                    cumba::cumbaParameters)
+
+out_sim<-out |> 
+  select(year,doy,et0,radiation) |> 
+  left_join(weather_df)
+
+
+ggplot(out_sim,aes(x=doy))+
+  stat_summary(geom='ribbon',aes(y=et0))+#simulated
+  stat_summary(geom='ribbon',aes(y=ET0),fill='grey')
+
+ggplot(out_sim,aes(x=doy))+
+  stat_summary(geom='ribbon',aes(y=radiation))+#simulated
+  stat_summary(geom='ribbon',aes(y=Rg),fill='grey')
+
+
+ggplot(out_sim,aes(x=radiation,y=Rg))+
+  geom_point()+
+  ylim(0,35)+
+  xlim(0,35)+
+  geom_smooth(method='lm')
+
+
+
+```

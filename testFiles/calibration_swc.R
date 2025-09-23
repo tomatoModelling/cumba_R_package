@@ -12,16 +12,15 @@ library(devtools)
 library(remotes)
 #install_github("tomatoModelling/cumba_R_package",force=T)
 #devtools::uninstall("cumba")
-devtools::install()
+#devtools::install()
 #library(cumba)
-devtools::document()
-devtools::load_all()
+#devtools::document()
+#devtools::load_all()
 
 # Set this directory as the working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 library(cumba)
-param<-cumba::parameters
 
 #load dw data
 swc <- read_excel('SoilWaterContent.xlsx') |> 
@@ -35,6 +34,7 @@ sheet_names <- excel_sheets(excel_file)  # Get the names of all sheets in the Ex
 all_sheets <- lapply(sheet_names, function(sheet) {
   read_excel(excel_file, sheet = sheet) # Read all sheets into a list of data frames
 })
+
 # Read weather data ----
 weather<-all_sheets[[4]]
 irrigation<-all_sheets[[7]]
@@ -58,8 +58,8 @@ units<-all_sheets[[1]]
 source('..//R//Main.R')
 
 par<-cumba::cumbaParameters
-par$
 
+par$WaterStressSensitivity$value<-10
 par$Tbase$value<-10
 par$Topt$value<-25
 par$Tmax$value<-35
@@ -75,12 +75,12 @@ par$DepletionFraction$value<-80
 par$RootIncrease$value<-0.5
 
 
-wp <- c(.211, rep(.211,2), rep(.225,3))
-fc<-c(.377, rep(.377,2),rep(.47,3))
+wp <- c(rep(.211,2), rep(.225,3))
+fc<-c(rep(.377,2),rep(.47,3))
 #fc<-c(rep(.377,2),rep(.45,3))
-years<-c(2005,2017,2017,rep(2018,3))
-exps<-c(1,27,28,29,30,32)
-swcIni<-c(100,rep(100,2),rep(40,3))
+years<-c(2017,2017,rep(2018,3))
+exps<-c(27,28,29,30,32)
+swcIni<-c(rep(100,2),rep(40,3))
 i<-1
 
 outputs_list<-list()
@@ -109,7 +109,7 @@ for(i in 1:length(wp))
 }
 
 write.csv(out,'testET0.csv')
-
+library(tidyverse)
 
 out<-do.call(rbind,outputs_list) |> 
   # select(site,year,doy,experiment,wc1,wc2,wc3,wc1mm,wc2mm,wc3mm,rootState,gddState,
