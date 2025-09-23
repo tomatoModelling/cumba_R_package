@@ -1,5 +1,5 @@
 # data-raw/make_cumbaParameters.R
-df <- read.csv("..//data-raw/parameters.csv", stringsAsFactors = FALSE)
+df <- read.csv("data-raw/parameters.csv", stringsAsFactors = FALSE)
 
 cumbaParameters <- setNames(
   lapply(seq_len(nrow(df)), function(i) {
