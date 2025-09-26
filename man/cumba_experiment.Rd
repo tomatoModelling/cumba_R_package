@@ -9,7 +9,8 @@ cumba_experiment(
   param,
   estimateRad = T,
   estimateET0 = T,
-  irrigation_df
+  irrigation_df,
+  fullOut = F
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ cumba_experiment(
 \item{estimateET0}{a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'}
 
 \item{irrigation_df}{a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.}
+
+\item{fullOut}{boolean, if FALSE main output variables are saved (default), if TRUE all variables are saved}
 }
 \value{
 a dataframe containing the weatherDf plus the daily outputs of the cumba model

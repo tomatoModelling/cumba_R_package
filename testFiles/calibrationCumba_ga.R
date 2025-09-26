@@ -1,8 +1,6 @@
 # Clear environment
 rm(list = ls())
 
-#remove.packages('cumba')
-#devtools::install_github('https://github.com/tomatoModelling/cumba_R_package.git')
 # Load required packages
 library(tidyverse)
 library(data.table)
@@ -14,100 +12,90 @@ library(GA)  # Genetic Algorithm package
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 # --- Load and Prepare Input Data ---
+exp_data<-tomatoFoggia
 
-# Load all sheets from the Excel input file
-excel_file <- "Dataset Carucci et al. new.xlsx"
-sheet_names <- excel_sheets(excel_file)
-all_sheets <- lapply(sheet_names, function(sheet) read_excel(excel_file, sheet = sheet))
+#load parameters
+cumba_par <- cumbaParameters
 
-# Extract relevant data frames
-weather     <- all_sheets[[4]]
-irrigation  <- all_sheets[[7]]
-ids         <- all_sheets[[2]]
-yield       <- as.data.frame(all_sheets[[5]])
+# Define parameters in calibration
+pars <- c("Topt", "RUE", "FloweringLag", "CycleLength", "WaterStressSensitivity",
+          "Theat", "RootIncrease", "FloweringMax", "RootDepthMax", "Tbase", "Tmax")
 
-# Merge irrigation with IDs and assign site name
-irrigation_df <- irrigation |> left_join(ids)
-irrigation_df$Site <- "Foggia"
-
-# Process weather data
-weather <- weather |> 
-  mutate(Date = as.Date(DATE), Site = "Foggia") |> 
-  rename(Rad = RAD) |> 
-  mutate(Lat = 41)
-
-estimateRadiation <- TRUE
-estimateET0 <- TRUE
+# Extract lower and upper bounds
+# Plain numeric vectors (exactly like manual c(...))
+lowerPar <- vapply(pars, function(p) cumba_par[[p]]$min, numeric(1))
+upperPar <- vapply(pars, function(p) cumba_par[[p]]$max, numeric(1))
+lowerPar <- unname(lowerPar)
+upperPar <- unname(upperPar)
 
 # --- Define Genetic Algorithm Loss Function ---
-
-lossFunctionGA <- function(params, weather, sowing_date) {
-  # Assign parameter values to model
-  cumbaParameters$Topt$value                <- params[1]
-  cumbaParameters$RUE$value                 <- params[2]
-  cumbaParameters$FloweringLag$value        <- params[3]
-  cumbaParameters$CycleLength$value         <- params[4]
-  cumbaParameters$WaterStressSensitivity$value <- params[5]
-  cumbaParameters$Theat$value               <- params[6]
-  cumbaParameters$RootIncrease$value        <- params[7]
-  cumbaParameters$FloweringMax$value        <- params[8]
-  cumbaParameters$RootDepthMax$value        <- params[9]
-  cumbaParameters$Tbase$value        <- params[10]
-  cumbaParameters$Tmax$value        <- params[11]
+lossFunctionGA <- function(params, weather) {
   
+  # Assign parameter values to model
+  cumba_par$Topt$value                   <- params[1]
+  cumba_par$RUE$value                    <- params[2]
+  cumba_par$FloweringLag$value           <- params[3]
+  cumba_par$CycleLength$value            <- params[4]
+  cumba_par$WaterStressSensitivity$value <- params[5]
+  cumba_par$Theat$value                  <- params[6]
+  cumba_par$RootIncrease$value           <- params[7]
+  cumba_par$FloweringMax$value           <- params[8]
+  cumba_par$RootDepthMax$value           <- params[9]
+  cumba_par$Tbase$value                  <- params[10]
+  cumba_par$Tmax$value                   <- params[11]
+
+  #source("..//R//Main.R")
   # Run crop simulation
-  CropSim <- cumba_experiment(weather, cumbaParameters, 
-                              estimateRad = TRUE, estimateET0 = TRUE,
-                              irrigation_df)
+  out_calib <- cumba_experiment(exp_data$weather, cumba_par, 
+                              estimateRad = T, estimateET0 = T,
+                              exp_data$irrigation,fullOut=F)
   
   # Join with yield data and filter for last row per experiment
-  CropSim <- as.data.frame(CropSim) |> 
-    left_join(yield, by = c("experiment" = "ID")) |>
+  out_calib <- as.data.frame(out_calib) |> 
+    left_join(exp_data$production, by = c("experiment" = "ID")) |>
     group_by(experiment) |>
     slice_tail()
   
+  # objective function definition
   # Calculate normalized RMSE and Pearson correlation
-  mse <- sqrt(mean((CropSim$fruitsStateAct - CropSim$Y_TOT * 0.05 * 10)^2)) / 
-    mean(CropSim$Y_TOT * 0.05 * 10)
-  r <- cor(CropSim$fruitsStateAct, CropSim$Y_TOT * 0.05 * 10, method = "pearson")
+  rmse <- sqrt(mean((out_calib$yield - out_calib$yield_ref)^2)) / 
+    mean(out_calib$yield_ref)
+  
+  r <- cor(out_calib$yield, out_calib$yield_ref, method = "pearson")
   
   # Objective function to minimize
-  objFun <- (mse * 0.5) / 100 + ((1 - r) * 0.5)
+  objFun <- (rmse * 0.5) + ((1 - r) * 0.5)
   
-  cat(paste0("RMSE: ", round(mse, 3)), " Pearson r: ", round(r, 3), " Obj fun: ", round(objFun, 4), "\n")
+  cat(paste0("RMSE: ", round(rmse, 3)), " Pearson r: ", round(r, 3), " Obj fun: ", round(objFun, 4), "\n")
   
   return(objFun)
 }
 
 # --- Prepare Parameters for Optimization ---
 
-parametersCumba <- read.csv("parameters.csv")
+# parametersCumba <- read.csv("parameters.csv")
+# 
+# cumbaParameters<-cumba::cumbaParameters
+# # Define bounds
+# lowerPar <- c(cumbaParameters$Topt$min, cumbaParameters$RUE$min, cumbaParameters$FloweringLag$min,
+#               cumbaParameters$CycleLength$min, cumbaParameters$WaterStressSensitivity$min,
+#               cumbaParameters$Theat$min, cumbaParameters$RootIncrease$min,
+#               cumbaParameters$FloweringMax$min, cumbaParameters$RootDepthMax$min,
+#               cumbaParameters$Tbase$min,cumbaParameters$Tmax$min)
+# 
+# upperPar <- c(cumbaParameters$Topt$max, cumbaParameters$RUE$max, cumbaParameters$FloweringLag$max,
+#               cumbaParameters$CycleLength$max, cumbaParameters$WaterStressSensitivity$max,
+#               cumbaParameters$Theat$max, cumbaParameters$RootIncrease$max,
+#               cumbaParameters$FloweringMax$max, cumbaParameters$RootDepthMax$max,
+#               cumbaParameters$Tbase$max,cumbaParameters$Tmax$max)
 
-cumbaParameters<-cumba::cumbaParameters
-# Define bounds
-lowerPar <- c(cumbaParameters$Topt$min, cumbaParameters$RUE$min, cumbaParameters$FloweringLag$min,
-              cumbaParameters$CycleLength$min, cumbaParameters$WaterStressSensitivity$min,
-              cumbaParameters$Theat$min, cumbaParameters$RootIncrease$min,
-              cumbaParameters$FloweringMax$min, cumbaParameters$RootDepthMax$min,
-              cumbaParameters$Tbase$min,cumbaParameters$Tmax$min)
 
-upperPar <- c(cumbaParameters$Topt$max, cumbaParameters$RUE$max, cumbaParameters$FloweringLag$max,
-              cumbaParameters$CycleLength$max, cumbaParameters$WaterStressSensitivity$max,
-              cumbaParameters$Theat$max, cumbaParameters$RootIncrease$max,
-              cumbaParameters$FloweringMax$max, cumbaParameters$RootDepthMax$max,
-              cumbaParameters$Tbase$max,cumbaParameters$Tmax$max)
-
-# Run GA Optimization
+# Run GA Optimization (see ?ga for advanced settings of the genetic algorithm)
 ga_result <- ga(
   type = "real-valued",
-  fitness = function(params) -lossFunctionGA(params, weather, sowing_date),
+  fitness = function(params) -lossFunctionGA(params, exp_data$weather),
   lower = lowerPar,
   upper = upperPar,
-  popSize = 50,
-  maxiter = 100,
-  run = 30,
-  pmutation = 0.1,
-  pcrossover = 0.8,
   optimArgs = list(method = "L-BFGS-B")
 )
 

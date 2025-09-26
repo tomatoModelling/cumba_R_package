@@ -59,7 +59,7 @@ source('..//R//Main.R')
 
 par<-cumba::cumbaParameters
 
-par$WaterStressSensitivity$value<-10
+par$WaterStressSensitivity$value<-5
 par$Tbase$value<-10
 par$Topt$value<-25
 par$Tmax$value<-35
@@ -72,7 +72,7 @@ par$SoilWaterInitial$value<-100
 par$DepletionFraction$value<-80
 
 #TODO: calibrate
-par$RootIncrease$value<-0.5
+par$RootIncrease$value<-0.3
 
 
 wp <- c(rep(.211,2), rep(.225,3))
@@ -108,7 +108,6 @@ for(i in 1:length(wp))
   outputs_list[[i]]<-outputs
 }
 
-write.csv(out,'testET0.csv')
 library(tidyverse)
 
 out<-do.call(rbind,outputs_list) |> 
@@ -138,7 +137,7 @@ ggplot(out ,aes(x=doy)) +
    geom_line(aes(y=wc1),col='orange')+
    geom_line(aes(y=wc2),col='red')+
    geom_line(aes(y=wc3),col='blue')+
-  geom_line(aes(y=ftsw),col='red',linewidth=1.2)+
+ # geom_line(aes(y=ftsw),col='red',linewidth=1.2)+
   geom_line(aes(y=swc_sim_2),col='gold2',linewidth=1.2)+
   geom_line(aes(y=swc_sim),col='gold4',linewidth=1.2)+
   geom_line(aes(y=rootState/100),col='black',linewidth=1.2)+
@@ -153,49 +152,33 @@ ggplot(out ,aes(x=doy)) +
   #lemon::facet_rep_wrap(~experiment,repeat.tick.labels = T)
 
 #Kcmid computation
-waterBalance=out |> 
-  filter(experiment==28) |> 
-  filter(fIntAct>=.6&!is.na(swc)) |> 
-  summarise(p=sum(p+irrigation),
-            et0=sum(et0),
-            fintAve=mean(fIntAct))
+# waterBalance=out |> 
+#   filter(experiment==28) |> 
+#   filter(fIntAct>=.6&!is.na(swc)) |> 
+#   summarise(p=sum(p+irrigation),
+#             et0=sum(et0),
+#             fintAve=mean(fIntAct))
+# 
+# swcs=out |> 
+#   filter(experiment==28) |> 
+#   filter(fIntAct>=.6&!is.na(swc)) 
 
-swcs=out |> 
-  filter(experiment==28) |> 
-  filter(fIntAct>=.6&!is.na(swc)) 
-
-swcIni<-swcs[1,]$swc * 600/100
-swcFin <- swcs[nrow(swcs),]$swc * 600/100
-
-
-253/194
-232-219
-13+267
-
-#Kcini computation
-waterBalance_ini=out |> 
-  filter(experiment%in%c(27)) |> 
-  filter(phenoCode==0) |> 
-  summarise(p=sum(p+irrigation),
-            et0=sum(et0))
-
-swcs_ini=out |> 
-  filter(experiment%in%c(27,28)) |> 
-  filter(phenoCode==0) |> 
-  filter(!is.na(swc)) |> 
-  group_by(doy) |> 
-  summarise(swc=mean(swc))
-
-
-swcIni<-swcs_ini[1,]$swc * 600/100
-swcFin <- swcs_ini[nrow(swcs_ini),]$swc * 600/100
-
-(32.5-3.5)/83
-
-66.3-33.8
-253/194
-232-219
-13+267
+# swcIni<-swcs[1,]$swc * 600/100
+# swcFin <- swcs[nrow(swcs),]$swc * 600/100
+# 
+# #Kcini computation
+# waterBalance_ini=out |> 
+#   filter(experiment%in%c(27)) |> 
+#   filter(phenoCode==0) |> 
+#   summarise(p=sum(p+irrigation),
+#             et0=sum(et0))
+# 
+# swcs_ini=out |> 
+#   filter(experiment%in%c(27,28)) |> 
+#   filter(phenoCode==0) |> 
+#   filter(!is.na(swc)) |> 
+#   group_by(doy) |> 
+#   summarise(swc=mean(swc))
 
 
 

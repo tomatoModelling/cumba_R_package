@@ -6,6 +6,7 @@
 #' @param estimateRad a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have the Rad column
 #' @param estimateET0 a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
 #' @param irrigation_df a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
+#' @param fullOut boolean, if FALSE main output variables are saved (default), if TRUE all variables are saved
 #' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
 #' @examples 
 #' #' # Example weather dataframe
@@ -35,7 +36,12 @@
 #'
 #' @export
 #' 
-cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrigation_df)
+cumba_experiment <- function(weather, 
+                             param, 
+                             estimateRad=T, 
+                             estimateET0=T, 
+                             irrigation_df,
+                             fullOut = F)
 {
   # convert param list
   if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
@@ -142,7 +148,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   floweringPotentialSum<-sum(floweringPotentialFunction)
   
   #Define the output vector with column names for the results dataframe ----
-  outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
+    outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState','ftsw',
                 'trc1','ev1','dc1','wc1mm','daysNoRain',
                 'trc2','dc2','wc2mm','dc3','wc3mm','wc1',"wc2","wc3",
@@ -159,6 +165,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
                 "fruitWaterContentSensitivity","fruitWaterContentAct",
                 "fruitFreshWeightPot","fruitFreshWeightAct",
                 "brixPot","brixAct")
+ 
   
  #Initialize lists to store outputs at different levels (years, experiments, sites)----
   outputs<-list()
@@ -390,9 +397,6 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           wc3 <- soilModel[[13]]
           ws <- soilModel[[14]]
           
-         
-          
-          
           ## Compute carbon rates and update carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
           carbonRatePot <- carbonRate(rue,radSim,gdd,fIntPot,hs,cs,1) #heat/cold stress
@@ -477,7 +481,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
           
           
           ## Populate output variables----
-          outputs[[as.character(doy)]]<-setNames(list(
+            outputs[[as.character(doy)]]<-setNames(list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
               gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
               trc1, ev1, dc1, wc1mm, daysNoRain, 
@@ -498,6 +502,7 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
               fruitFreshWeightPot,fruitFreshWeightAct,
               brixPot,brixAct), 
               outputNames)
+
         }
         ## Store the result in the outputs list ----     
         tempOutputs<-as.data.frame(t((matrix(unlist(outputs), 
@@ -543,6 +548,20 @@ cumba_experiment <- function(weather, param, estimateRad=T, estimateET0=T, irrig
   cat("\nElapsed time:", elapsedTime, "\n")
   
   rownames(dfOut) <- NULL
+  
+  
+  #select a subset of variables if fullOut == F
+  if(fullOut==F){
+    dfOut<-dfOut |> 
+      mutate(swc = (wc1mm+wc2mm+wc3mm)/rootDepthMax*10,
+             fruitFreshWeightAct = fruitFreshWeightAct*.01) |> 
+      select(site:doy, p, irrigation,
+             phenoStage,swc,fruitFreshWeightAct,brixAct) |> 
+      rename(stage=phenoStage,
+             yield=fruitFreshWeightAct,
+             brix = brixAct)
+  }
+  
   #return the output dataframe
   return(dfOut)
 }
@@ -935,7 +954,7 @@ cumba_scenario <- function(weather, param,
           
           #water stress
           ftsw <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint )
-          if(ftsw>1) {ftsw <- 1}
+          if(ftsw>1) {ftsw = 1}
           
           
           #compute soil water dynamics
@@ -961,9 +980,6 @@ cumba_scenario <- function(weather, param,
           wc3 <- soilModel[[13]]
           ws <- soilModel[[14]]
           
-          
-          
-          # if(ws>1) {ws<-1}
           
           ## Compute carbon rates and update the carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
@@ -1578,10 +1594,6 @@ BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
     fruitFreshWeightAct<-0
     brixPot<-0
     brixAct<-0
-    
-    
-    
-    
   }
   return(list(kt_aux,carbonSugarRate,carbonSugarState,
               fruitWaterContentPot,fruitWaterContentPotRate,
