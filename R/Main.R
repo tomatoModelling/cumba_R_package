@@ -74,10 +74,10 @@ cumba_experiment <- function(weather,
   
   if(estimateRad == F){
     RadColID <- which(colnames(weather)=='Rad')
-    }
+  }
   else{
     LatColID <- which(colnames(weather)=='Lat')
-    }
+  }
   
   ET0ColID<-0
   if(estimateET0 == F){ET0ColID<-which(colnames(weather)=="ET0")}
