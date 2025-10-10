@@ -6,19 +6,13 @@ rm(list=ls())
 library(tidyverse)
 library(lubridate)
 library(readxl)
-library(sirad)
 library(tidyr)
-library(devtools)
-library(remotes)
 #install_github("tomatoModelling/cumba_R_package",force=T)
 library(cumba)
 
-# Set this directory as the working directory ----
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-
 
 # Read excel sheets with input data ----
-  excel_file <- paste0("Dataset Carucci et al. new.xlsx")
+  excel_file <- paste0("testFiles//Dataset Carucci et al. new.xlsx")
   sheet_names <- excel_sheets(excel_file)  # Get the names of all sheets in the Excel file
   all_sheets <- lapply(sheet_names, function(sheet) {
   read_excel(excel_file, sheet = sheet) # Read all sheets into a list of data frames
@@ -48,7 +42,6 @@ options(scipen = 999)
 yieldRed<-all_sheets[[5]] |> 
   filter(ID==3)
 units<-all_sheets[[1]]
-source('..//R//Main.R')
 
 par<-cumba::cumbaParameters
 par$RUE$value=3.5

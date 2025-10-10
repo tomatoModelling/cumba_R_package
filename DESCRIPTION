@@ -2,9 +2,13 @@ Package: cumba
 Type: Package
 Title: Carbon Use Model for yield and Brix Assessment
 Version: 0.0.1.0
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Encoding: UTF-8
 Imports: data.table (>= 1.9.8)
 Depends: 
     R (>= 3.5)
 LazyData: true
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr

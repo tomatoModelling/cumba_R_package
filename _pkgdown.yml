@@ -1,0 +1,64 @@
+url: https://tomatoModelling.github.io/cumba_R_package/
+
+template:
+  bootstrap: 5
+  bootswatch: darkly
+  bslib:
+    primary: "#8b0000"      # deep red accent
+    secondary: "#ff4500"    # orange accent
+
+navbar:
+  structure:
+    left:  [home, reference, articles]
+    right: [github]
+  components:
+    home:
+      text: "Home"
+      href: index.html
+    reference:
+      text: "Reference"
+      href: reference/index.html
+    articles:
+      text: "Articles"
+      menu:
+        - text: "Septoria on wheat in Indiana"
+    github:
+      icon: fab fa-github
+      href: https://github.com/tomatoModelling/cumba_R_package/
+      aria-label: "CUMBA GitHub repository"
+
+# use this line only if favicon.ico exists and is valid
+favicon: man/figures/favicon.ico
+# OR disable completely:
+# favicon: ~
+
+home:
+  title: "Cumba"
+  description: "Some desc"
+  links:
+    - text: GitHub repository
+      href: https://github.com/tomatoModelling/cumba_R_package/
+    - text: Report an issue
+      href: https://github.com/tomatoModelling/cumba_R_package/issues
+
+reference:
+  - title: "Main Function"
+    contents:
+      - cumba_experiment
+
+  - title: "Parameter Sets"
+    contents:
+      - cumbaParameters
+
+  - title: "Utilities"
+    contents:
+      - parameters_to_df
+      - df_to_parameters
+
+  - title: "Datasets"
+    contents:
+      - weather_indiana
+
+articles:
+  - title: "Case studies"
+    contents: []

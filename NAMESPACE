@@ -2,3 +2,6 @@
 
 export(cumba_experiment)
 export(cumba_scenario)
+importFrom(crayon,blue)
+importFrom(crayon,red)
+importFrom(tibble,as_tibble)

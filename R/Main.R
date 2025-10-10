@@ -1,41 +1,119 @@
-#' the CUMBA model
+#' CUMBA model — experiment runner
 #'
-#' It is a daily time step simulation model which computes the yield and brix degree of a tomato crop as a function of weather data and irrigation options.
-#' @param weather a dataframe with weather data which must have the following columns......
-#' @param param A named list of model parameters, where each element is a list with fields 'value', 'min', 'max', and 'description'
-#' @param estimateRad a boolean value to estimate solar radiation based on temperature using Hargreaves model. Default to 'true' (implying that the column Lat is present in weather df) if 'false' the 'weather' df must have the Rad column
-#' @param estimateET0 a boolean value to estimate reference evapotranspiration based on temperature using Hargreaves model. Default to 'true'
-#' @param irrigation_df a dataframe containing the irrigation scheduling for each experiment defined in the weather dataframe.
-#' @param fullOut boolean, if FALSE main output variables are saved (default), if TRUE all variables are saved
-#' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
-#' @examples 
-#' #' # Example weather dataframe
+#' Runs the daily time-step CUMBA simulation for one or more sites/experiments,
+#' computing tomato yield and Brix from weather inputs and irrigation options.
+#' The function validates inputs, converts a list-of-lists parameter object to a
+#' tibble of numeric values when needed, and prints a blue message indicating
+#' it is running in *experiment* mode.
+#'
+#' @section Required inputs:
+#' \strong{weather}: must include columns \code{Site}, \code{Tx}, \code{Tn},
+#' \code{P}, \code{DATE}. Depending on the flags:
+#' \itemize{
+#'   \item if \code{estimateRad = TRUE} (default), column \code{Lat} is required;
+#'   \item if \code{estimateRad = FALSE}, column \code{Rad} is required;
+#'   \item if \code{estimateET0 = FALSE}, column \code{ET0} is required.
+#' }
+#'
+#' \strong{irrigation\_df}: must include columns \code{ID}, \code{Site},
+#' \code{YEAR}, \code{DATE}, \code{WVOL}.
+#'
+#' @param weather A \code{data.frame} (or tibble) of daily weather by site with
+#'   at least \code{Site}, \code{Tx}, \code{Tn}, \code{P}, \code{DATE} and, based
+#'   on flags, either \code{Lat} (to estimate radiation) or \code{Rad}
+#'   (provided radiation). If \code{estimateET0 = FALSE}, an \code{ET0} column
+#'   must be present.
+#' @param param Model parameters. Either:
+#'   \itemize{
+#'     \item a \emph{named list} where each element is itself a list with fields
+#'       \code{value}, \code{min}, \code{max}, \code{description}; this form is
+#'       automatically converted to a tibble of parameter \emph{values}; or
+#'     \item a tibble/data.frame already containing the required parameter values.
+#'   }
+#'   The object must contain (as names/columns) all of:
+#'   \code{Tbase}, \code{Topt}, \code{Tmax}, \code{Theat}, \code{Tcold},
+#'   \code{FIntMax}, \code{CycleLength}, \code{TransplantingLag},
+#'   \code{FloweringLag}, \code{HalfIntGrowth}, \code{HalfIntSenescence},
+#'   \code{InitialInt}, \code{RUE}, \code{KcIni}, \code{KcMax}, \code{RootIncrease},
+#'   \code{RootDepthMax}, \code{RootDepthInitial}, \code{FieldCapacity},
+#'   \code{WiltingPoint}, \code{DepletionFraction}, \code{FloweringSlope},
+#'   \code{FloweringMax}, \code{k0}, \code{FruitWaterContentMin},
+#'   \code{FruitWaterContentMax}, \code{FruitWaterContentInc},
+#'   \code{FruitWaterContentDecreaseMax}.
+#'   Cardinal temperatures are validated so that \code{Tmax > Topt > Tbase}.
+#' @param estimateRad Logical. If \code{TRUE} (default), solar radiation is
+#'   estimated from temperature (Hargreaves) and \code{Lat} must be in
+#'   \code{weather}. If \code{FALSE}, \code{weather} must include \code{Rad}.
+#' @param estimateET0 Logical. If \code{TRUE} (default), reference
+#'   evapotranspiration (ET0) is estimated from temperature (Hargreaves). If
+#'   \code{FALSE}, \code{weather} must include an \code{ET0} column.
+#' @param irrigation_df A \code{data.frame} with the irrigation schedule for each
+#'   experiment/site, containing columns \code{ID}, \code{Site}, \code{YEAR},
+#'   \code{DATE}, \code{WVOL}.
+#' @param fullOut Logical. If \code{FALSE} (default) returns key outputs; if
+#'   \code{TRUE} returns all internal variables.
+#'
+#' @details
+#' On start, the function prints \code{"CUMBA running in experiment mode"} in
+#' blue (via \pkg{crayon}). It checks that all required columns/elements are
+#' present and throws informative errors if anything is missing. Sites are
+#' inferred from the unique values of \code{weather$Site}.
+#'
+#' If \code{param} is supplied as a list-of-lists with a \code{value} field,
+#' it is converted internally with \code{tibble::as_tibble(lapply(param, `[[`, "value"))}.
+#'
+#' @return A \code{data.frame} containing the input \code{weather} plus the
+#'   daily CUMBA outputs per site and date; the set of columns depends on
+#'   \code{fullOut}.
+#'
+#' @examples
+#' # Minimal reproducible inputs (toy data)
 #' weather <- data.frame(
 #'   Site = "TestSite",
-#'   Tx = c(30, 32),
-#'   Tn = c(20, 21),
-#'   P = c(0, 5),
+#'   Tx   = c(30, 32),
+#'   Tn   = c(20, 21),
+#'   P    = c(0, 5),
 #'   DATE = as.Date(c("2025-06-01", "2025-06-02")),
-#'   Lat = 40
+#'   Lat  = 40
 #' )
 #'
-#' # Example irrigation dataframe
 #' irrigation_df <- data.frame(
-#'   ID = 1,
+#'   ID = 1L,
 #'   Site = "TestSite",
-#'   YEAR = 2025,
+#'   YEAR = 2025L,
 #'   DATE = as.Date(c("2025-06-01", "2025-06-02")),
 #'   WVOL = c(5, 10)
 #' )
 #'
-#' # Minimal parameters using cumbaParameters dataset
-#' params <- lapply(cumbaParameters, function(p) p)  # copy default params
+#' # Parameters as list-of-lists (auto-converted):
+#' param <- list(
+#'   Tbase = list(value = 8, min = 0, max = 15, description = "Base T"),
+#'   Topt  = list(value = 26, min = 15, max = 35, description = "Opt T"),
+#'   Tmax  = list(value = 40, min = 30, max = 50, description = "Max T"),
+#'   Theat = list(value = 35), Tcold = list(value = 5),
+#'   FIntMax = list(value = 1), CycleLength = list(value = 120),
+#'   TransplantingLag = list(value = 5), FloweringLag = list(value = 40),
+#'   HalfIntGrowth = list(value = 0.5), HalfIntSenescence = list(value = 0.8),
+#'   InitialInt = list(value = 0.05), RUE = list(value = 2.5),
+#'   KcIni = list(value = 0.6), KcMax = list(value = 1.15),
+#'   RootIncrease = list(value = 0.01), RootDepthMax = list(value = 1.0),
+#'   RootDepthInitial = list(value = 0.1), FieldCapacity = list(value = 0.30),
+#'   WiltingPoint = list(value = 0.12), DepletionFraction = list(value = 0.5),
+#'   FloweringSlope = list(value = 1), FloweringMax = list(value = 1),
+#'   k0 = list(value = 0.01),
+#'   FruitWaterContentMin = list(value = 0.90),
+#'   FruitWaterContentMax = list(value = 0.95),
+#'   FruitWaterContentInc = list(value = 0.001),
+#'   FruitWaterContentDecreaseMax = list(value = 0.002)
+#' )
 #'
-#' # Run the model (small dataset)
-#' # result <- cumba_experiment(weather, params, irrigation_df = irrigation_df)
+#' # Run (uncomment when the function body is implemented):
+#' # result <- cumba_experiment(weather, param, irrigation_df = irrigation_df)
 #'
+#' @seealso \code{\link[tibble]{as_tibble}}, \code{\link[crayon]{blue}}, \code{\link[crayon]{red}}
+#' @importFrom tibble as_tibble
+#' @importFrom crayon blue red
 #' @export
-#' 
 cumba_experiment <- function(weather, 
                              param, 
                              estimateRad=T, 
@@ -576,6 +654,7 @@ cumba_experiment <- function(weather,
 #' @param deficitIrrigation a boolean value to estimate irrigation requirements. Default to 'false', implying that the irrigation_df is provided.
 #' @param waterStressLevel a float corresponding to the threshold of water stress to trigger automatic irrigation. Default to .5, it is needed only if deficitIrrigation is 'true'.
 #' @param minimumTurn an integer corresponding to the minimum number of days elapsed from the previous irrigation event. Default to 4, it is needed only if deficitIrrigation is 'true'.
+#' @param fullOut boolean, if FALSE main output variables are saved (default), if TRUE all variables are saved
 #' @return a dataframe containing the weatherDf plus the daily outputs of the cumba model
 #' @examples 
 #' #' # Example weather dataframe
@@ -607,7 +686,8 @@ cumba_scenario <- function(weather, param,
                            estimateET0=T,
                            transplantingDOY=120,
                            waterStressLevel=.5, 
-                           minimumTurn = 4)
+                           minimumTurn = 4,
+                           fullOut=F)
 {
   # convert param list
   if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
@@ -1128,6 +1208,20 @@ cumba_scenario <- function(weather, param,
   elapsedTime <- endTime - startTime
   print(paste("Elapsed time:", elapsedTime))
   rownames(dfOut) <- NULL
+  
+  #select a subset of variables if fullOut == F
+  if(fullOut==F){
+    dfOut<-dfOut |> 
+      mutate(swc = (wc1mm+wc2mm+wc3mm)/rootDepthMax*10,
+             fruitFreshWeightAct = fruitFreshWeightAct*.01) |> 
+      select(site:doy, p, irrigation,
+             phenoStage,swc,fruitFreshWeightAct,brixAct) |> 
+      rename(stage=phenoStage,
+             yield=fruitFreshWeightAct,
+             brix = brixAct)
+  }
+  
+  
   #return the output dataframe
   return(dfOut)
 }
