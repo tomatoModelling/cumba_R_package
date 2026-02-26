@@ -1213,7 +1213,7 @@ cumba_scenario <- function(weather, param,
   if(fullOut==F){
     dfOut<-dfOut |> 
       mutate(swc = (wc1mm+wc2mm+wc3mm)/rootDepthMax*10,
-             fruitFreshWeightAct = fruitFreshWeightAct*.01) |> 
+             fruitFreshWeightAct = fruitFreshWeightAct*.01) |>  #from t ha-1 to q ha-1
       select(site:doy, p, irrigation,
              phenoStage,swc,fruitFreshWeightAct,brixAct) |> 
       rename(stage=phenoStage,

@@ -16,10 +16,26 @@ exp_data<-tomatoFoggia
 
 #load parameters
 cumba_par <- cumbaParameters
+cumba_par$Topt$value <- 25
+cumba_par$Tcold$value<-5
+cumba_par$FIntMax$value<-.92
+cumba_par$TransplantingLag$value<-9
+cumba_par$InitialInt$value<-.001
+cumba_par$RootDepthInitial$value<-5
+cumba_par$SoilWaterInitial$value<-100
+cumba_par$DepletionFraction$value<-60
+cumba_par$FloweringMax$value<-41
+cumba_par$WaterStressSensitivity$min<-3
+cumba_par$RootIncrease$min<-.1
+
 
 # Define parameters in calibration
-pars <- c("Topt", "RUE", "FloweringLag", "CycleLength", "WaterStressSensitivity",
-          "Theat", "RootIncrease", "FloweringMax", "RootDepthMax", "Tbase", "Tmax")
+pars <- c("RUE", "FloweringLag", "CycleLength",
+          "HalfIntSenescence","HalfIntGrowth",
+          "KcMax", "FruitWaterContentMax",  
+          "WaterStressSensitivity",
+          "RootIncrease", "RootDepthMax",
+          "Topt")
 
 # Extract lower and upper bounds
 # Plain numeric vectors (exactly like manual c(...))
@@ -28,21 +44,24 @@ upperPar <- vapply(pars, function(p) cumba_par[[p]]$max, numeric(1))
 lowerPar <- unname(lowerPar)
 upperPar <- unname(upperPar)
 
+lowerPar<-c(2.4, 15, 800, 80, 15, .9, 0.85,  6, .9,  90, 22)
+upperPar<-c(2.9, 25, 1200, 88, 25, 1, 0.92,  9, 1.2,  120, 28)
+
 # --- Define Genetic Algorithm Loss Function ---
 lossFunctionGA <- function(params, weather) {
   
   # Assign parameter values to model
-  cumba_par$Topt$value                   <- params[1]
-  cumba_par$RUE$value                    <- params[2]
-  cumba_par$FloweringLag$value           <- params[3]
-  cumba_par$CycleLength$value            <- params[4]
-  cumba_par$WaterStressSensitivity$value <- params[5]
-  cumba_par$Theat$value                  <- params[6]
-  cumba_par$RootIncrease$value           <- params[7]
-  cumba_par$FloweringMax$value           <- params[8]
-  cumba_par$RootDepthMax$value           <- params[9]
-  cumba_par$Tbase$value                  <- params[10]
-  cumba_par$Tmax$value                   <- params[11]
+  cumba_par$RUE$value                    <- params[1]
+  cumba_par$FloweringLag$value           <- params[2]
+  cumba_par$CycleLength$value            <- params[3]
+  cumba_par$HalfIntSenescence$value      <- params[4]
+  cumba_par$HalfIntGrowth$value          <- params[5]
+  cumba_par$KcMax$value                  <- params[6]
+  cumba_par$FruitWaterContentMax$value   <- params[7]
+  cumba_par$WaterStressSensitivity$value <- params[8]
+  cumba_par$RootIncrease$value           <- params[9]
+  cumba_par$RootDepthMax$value           <- params[10]
+  cumba_par$Topt$value                   <- params[11]
 
   #source("..//R//Main.R")
   # Run crop simulation
@@ -58,37 +77,34 @@ lossFunctionGA <- function(params, weather) {
   
   # objective function definition
   # Calculate normalized RMSE and Pearson correlation
-  rmse <- sqrt(mean((out_calib$yield - out_calib$yield_ref)^2)) / 
+  nrmse_yield <- sqrt(mean((out_calib$yield - out_calib$yield_ref)^2)) / 
     mean(out_calib$yield_ref)
   
-  r <- cor(out_calib$yield, out_calib$yield_ref, method = "pearson")
+  nrmse_brix <- sqrt(mean((out_calib$brix - out_calib$brix_ref)^2)) / 
+    mean(out_calib$brix_ref)
+  
+  
+  r_yield <- cor(out_calib$yield, out_calib$yield_ref, method = "pearson")
+  r_brix <- cor(out_calib$brix, out_calib$brix_ref, method = "pearson")
   
   # Objective function to minimize
-  objFun <- (rmse * 0.5) + ((1 - r) * 0.5)
+  objFun_yield <- (nrmse_yield * 0.5) + ((1 - r_yield) * 0.5)
+  objFun_brix <- (nrmse_brix * 0.5) + ((1 - r_brix) * 0.5)
   
-  cat(paste0("RMSE: ", round(rmse, 3)), " Pearson r: ", round(r, 3), " Obj fun: ", round(objFun, 4), "\n")
-  
+  if(!is.na(objFun_brix))
+  {
+    objFun <- (objFun_yield+objFun_brix)/2
+  }
+  else
+  {
+    objFun<-9999
+  }
+    
+  cat(paste0("RMSE yield: ", round(nrmse_yield, 2), "r yield: ", round(r_yield, 2)),"\n")
+  cat(paste0("RMSE brix: ", round(nrmse_brix, 2), "r brix: ", round(r_brix, 2)),"\n")
+  cat(paste0("objFun: ", round(objFun, 2)),"\n")
   return(objFun)
 }
-
-# --- Prepare Parameters for Optimization ---
-
-# parametersCumba <- read.csv("parameters.csv")
-# 
-# cumbaParameters<-cumba::cumbaParameters
-# # Define bounds
-# lowerPar <- c(cumbaParameters$Topt$min, cumbaParameters$RUE$min, cumbaParameters$FloweringLag$min,
-#               cumbaParameters$CycleLength$min, cumbaParameters$WaterStressSensitivity$min,
-#               cumbaParameters$Theat$min, cumbaParameters$RootIncrease$min,
-#               cumbaParameters$FloweringMax$min, cumbaParameters$RootDepthMax$min,
-#               cumbaParameters$Tbase$min,cumbaParameters$Tmax$min)
-# 
-# upperPar <- c(cumbaParameters$Topt$max, cumbaParameters$RUE$max, cumbaParameters$FloweringLag$max,
-#               cumbaParameters$CycleLength$max, cumbaParameters$WaterStressSensitivity$max,
-#               cumbaParameters$Theat$max, cumbaParameters$RootIncrease$max,
-#               cumbaParameters$FloweringMax$max, cumbaParameters$RootDepthMax$max,
-#               cumbaParameters$Tbase$max,cumbaParameters$Tmax$max)
-
 
 # Run GA Optimization (see ?ga for advanced settings of the genetic algorithm)
 ga_result <- ga(
@@ -112,29 +128,66 @@ saveRDS(results_list, file = "ga_result.rds")
 # --- Run Simulation with Optimized Parameters ---
 
 paramCalibrated <- readRDS("ga_result.rds")[[1]]
-paramCalibrated<-cumba::cumbaParameters
+#paramCalibrated<-cumba::cumbaParameters
 # Update model parameters
-cumbaParameters$Topt$value                <- paramCalibrated[1]
-cumbaParameters$RUE$value                 <- paramCalibrated[2]
-cumbaParameters$FloweringLag$value        <- paramCalibrated[3]
-cumbaParameters$CycleLength$value         <- paramCalibrated[4]
-cumbaParameters$WaterStressSensitivity$value <- paramCalibrated[5]
-cumbaParameters$Theat$value               <- paramCalibrated[6]
-cumbaParameters$RootIncrease$value        <- paramCalibrated[7]
-cumbaParameters$FloweringMax$value        <- paramCalibrated[8]
-cumbaParameters$RootDepthMax$value        <- paramCalibrated[9]
-cumbaParameters$Tbase$value        <- paramCalibrated[10]
-cumbaParameters$Tmax$value        <- paramCalibrated[11]
+cumba_par$RUE$value                 <- paramCalibrated[1]
+cumba_par$FloweringLag$value        <- paramCalibrated[2]
+cumba_par$CycleLength$value         <- paramCalibrated[3]
+cumba_par$HalfIntSenescence$value         <- paramCalibrated[4]
+cumba_par$HalfIntGrowth$value         <- paramCalibrated[5]
+cumba_par$KcMax$value         <- paramCalibrated[6]
+cumba_par$FruitWaterContentMax$value         <- paramCalibrated[7]
+cumba_par$WaterStressSensitivity$value <- paramCalibrated[8]
+cumba_par$RootIncrease$value        <- paramCalibrated[9]
+cumba_par$RootDepthMax$value        <- paramCalibrated[10]
+
+
 
 # Perform final simulation
-optimizedSimulation <- cumba_experiment(weather, cumbaParameters,
+optimizedSimulation <- cumba_experiment(exp_data$weather, cumba_par,
                                         estimateRad = TRUE, estimateET0 = TRUE,
-                                        irrigation_df)
+                                        exp_data$irrigation,
+                                        fullOut = T)
+
+
+# Analyze and visualize correlation
+out_calib <- as.data.frame(optimizedSimulation) |> 
+  left_join(exp_data$production, by = c("experiment" = "ID")) |>
+  group_by(experiment) |>
+  slice_tail()
+
+
+lmYield <- lm(yield ~ yield_ref, data = out_calib)
+summary(lmYield)
+
+# Scatter plot with regression
+scatterYield <- out_calib |>
+  ggplot(aes(x = yield_ref, y = yield)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x)
+scatterYield
+
+
+lmBrix<- lm(brix ~ brix_ref, data = out_calib)
+summary(lmBrix)
+
+# Scatter plot with regression
+scatterBrix <- out_calib |>
+  ggplot(aes(x = brix_ref, y = brix)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x)
+scatterBrix
+
+
+
+
+
+
 
 # Attach yield only to final row per experiment
 optimizedSimulation <- optimizedSimulation %>%
   as.data.frame() %>%
-  left_join(yield, by = c("experiment" = "ID")) %>%
+  left_join(exp_data[[4]], by = c("experiment" = "ID")) %>%
   group_by(experiment) %>%
   mutate(
     row_number_within_group = row_number(),
@@ -147,19 +200,22 @@ optimizedSimulation <- optimizedSimulation %>%
 # --- Visualization ---
 
 ggplot(optimizedSimulation, aes(x = daysAfterSowing)) +
-  geom_line(aes(x = doy, y = fruitsStateAct * 0.001), color = "tomato3", alpha = 1, size = 1) +
-  stat_summary(
-    aes(x = doy, y = Y_TOT * 0.05 * 10 * 0.001),
-    fun.data = mean_sdl,
-    fun.args = list(mult = 1),
-    geom = "pointrange",
-    color = "tomato4",
-    alpha = 0.5,
-    size = 0.7
-  ) +
-  geom_line(aes(x = doy, y = wc1 + 0.1), color = "darkgoldenrod1", size = 0.8) +
-  geom_line(aes(x = doy, y = wc2 + 0.1), color = "peru", size = 0.8) +
-  geom_line(aes(x = doy, y = wc3 + 0.1), color = "saddlebrown", size = 0.8) +
+  #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
+  geom_line(aes(x = doy, y = fIntAct), color = "tomato3", alpha = 1, size = 1) +
+  geom_line(aes(x = doy, y = fIntPot), color = "tomato3", alpha = 1, size = 1) +
+  #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
+  #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
+  
+  # stat_summary(
+  #   aes(x = doy, y = yield_ref),
+  #   fun.data = mean_sdl,
+  #   fun.args = list(mult = 1),
+  #   geom = "pointrange",
+  #   color = "tomato4",
+  #   alpha = 0.5,
+  #   size = 0.7
+  # ) +
+  #geom_line(aes(x = doy, y = swc + 0.1), color = "darkgoldenrod1", size = 0.8)+
   geom_col(aes(x = doy, y = p * 0.01), fill = "slateblue1", width = 0.7) +
   geom_col(aes(x = doy, y = irrigation * 0.01), fill = "aquamarine4", width = 0.7) +
   theme_classic() +
@@ -177,14 +233,10 @@ ggplot(optimizedSimulation, aes(x = daysAfterSowing)) +
 write.csv(paramCalibrated, "paramCalibrated.csv", row.names = FALSE)
 
 # Analyze and visualize correlation
-optimizedSimulation <- optimizedSimulation |> filter(!is.na(Y_TOT))
+out_calib <- as.data.frame(optimizedSimulation) |> 
+  left_join(exp_data$production, by = c("experiment" = "ID")) |>
+  group_by(experiment) |>
+  slice_tail()
 
-lmD <- lm(fruitsStateAct ~ Y_TOT, data = optimizedSimulation)
-summary(lmD)
 
-# Scatter plot with regression
-scatter <- optimizedSimulation |>
-  ggplot(aes(x = Y_TOT * 0.05 * 10, y = fruitsStateAct)) +
-  geom_point() +
-  geom_smooth(method = "lm", formula = y ~ x)
-scatter
+
