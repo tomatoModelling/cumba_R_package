@@ -327,6 +327,7 @@ cumba_experiment <- function(weather,
         outputs<-list() #clean the list each year
         for(day in 1:nrow(dfYear))
         {
+          
           # Current date being processed
           date<-(dfYear[day,1])[[1]]
           
@@ -365,6 +366,14 @@ cumba_experiment <- function(weather,
           gddState <- gddState + gddRate #Growing degree day state
           cycleCompletion <- gddState/cycleLength*100 # Cycle completion percentage
   
+          
+          #fix cycle completion at 100 if exceeds
+          if(cycleCompletion>=100)
+          {
+            cycleCompletion = 100
+          }
+          
+          
           ## Compute root depth (cm)----     
           rootRate<-rootDepth(rootIncrease,gdd) #Root depth rate (cm/d)
           rootState <- ifelse(rootState+rootRate<=rootDepthMax,
@@ -473,7 +482,11 @@ cumba_experiment <- function(weather,
           dc3 <- soilModel[[11]]
           wc3mm <- soilModel[[12]]
           wc3 <- soilModel[[13]]
-          ws <- soilModel[[14]]
+          
+          ftsw_today <- (wsAve - wiltingPoint) / (fieldCapacity - wiltingPoint )
+          ws_today <- 1 - (waterStressFunction(ftsw_today,depletionFraction,waterStressSensitivity))
+          
+          ws <- ws_today
           
           ## Compute carbon rates and update carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
@@ -513,6 +526,7 @@ cumba_experiment <- function(weather,
             fruitsRatePot<-carbonRatePot * fruitSetCoefficient
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
+          
           
           ## Compute BRIX ----
           
@@ -682,12 +696,18 @@ cumba_experiment <- function(weather,
 #'
 #' @export
 cumba_scenario <- function(weather, param, 
-                           estimateRad=T, 
-                           estimateET0=T,
-                           transplantingDOY=120,
-                           waterStressLevel=.5, 
-                           minimumTurn = 4,
-                           fullOut=F)
+                           estimateRad = TRUE, 
+                           estimateET0 = TRUE,
+                           transplantingDOY = 120,
+                           waterStressLevel = list(
+                             vegetative = 0.5,
+                             reproductive = 0.5,
+                             ripening = 0.5), 
+                           minimumTurn = list(
+                             vegetative = 4,
+                             reproductive = 4,
+                             ripening = 4),
+                           fullOut = FALSE)
 {
   # convert param list
   if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
@@ -905,8 +925,36 @@ cumba_scenario <- function(weather, param,
           #150 days is the maximum duration of the tomato cycle (5 months)
           if(doy>=transplantingDOY && doy <= transplantingDOY+150)
           {
+            if(length(outputs)==0){
+              phenoCode = 0
+            }
+            else{
+              phenoCode = outputs[[as.character(doy-1)]][['phenoCode']]
+            }
+            
+            if(phenoCode == 0)
+            {
+              waterStressLevelSim <- 0
+              minimumTurnSim<-20
+            }
+            if (phenoCode == 1)
+            {
+              minimumTurnSim = minimumTurn$vegetative
+              waterStressLevelSim = waterStressLevel$vegetative
+            }
+            else if (phenoCode == 2)
+            {
+              minimumTurnSim = minimumTurn$reproductive
+              waterStressLevelSim = waterStressLevel$reproductive
+            }
+            else if (phenoCode ==3)
+            {
+              minimumTurnSim = minimumTurn$ripening
+              waterStressLevelSim = waterStressLevel$ripening
+            }
+            
             #run in scenario mode --> trigger irrigation based on conditions
-            if(ws < waterStressLevel & daysNoRain>=minimumTurn-1)
+            if(phenoCode > 0 & ws < waterStressLevelSim & daysNoRain>=minimumTurnSim-1)
             {
               #compute soil water at field capacity
               pwc1 <- 3 * (fieldCapacity )*10
@@ -950,6 +998,13 @@ cumba_scenario <- function(weather, param,
           gddRate <- round(gdd*(tOpt-tBase),2) #Growing degree day rate
           gddState <- gddState + gddRate #Growing degree day state
           cycleCompletion <- gddState/cycleLength*100 # Cycle completion percentage
+          
+          #fix cycle completion at 100 if exceeds
+          if(cycleCompletion>=100)
+          {
+            cycleCompletion = 100
+          }
+          
           
           ## Compute root depth (cm)----     
           rootRate<-rootDepth(rootIncrease,gdd) #Root depth rate (cm/d)
@@ -1060,6 +1115,17 @@ cumba_scenario <- function(weather, param,
           wc3 <- soilModel[[13]]
           ws <- soilModel[[14]]
           
+          if (rootState>3){
+            wsAveToday = (wc1*3 + wc2 * (rootState-3))/(rootState)
+          }else
+          {
+            wsAveToday = wc1
+          }
+          
+          ftsw_today <- (wsAveToday - wiltingPoint) / (fieldCapacity - wiltingPoint )
+          ws_today <- 1 - (waterStressFunction(ftsw_today,depletionFraction,waterStressSensitivity))
+          
+          ws <- ws_today
           
           ## Compute carbon rates and update the carbon states (potential and actual)----
           carbonRateIde <- carbonRate(rue,radSim,gdd,fIntPot,0,0,1) #no stress
@@ -1298,10 +1364,15 @@ phenoPhases<-function(gddState,cycleLength,transplantingLag,floweringLag)
   {
     phenoCode<-1
     phenoStage<-'vegetative'
-  }else
+  }else if (gddState < cycleLength*(100-floweringLag)/100)
   {
     phenoCode<-2
     phenoStage<-'reproductive'
+  }
+  else
+  {
+    phenoCode<-3
+    phenoStage<-'ripening'
   }
   return(list(phenoCode,phenoStage))
 }

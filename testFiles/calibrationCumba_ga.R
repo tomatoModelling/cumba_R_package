@@ -5,8 +5,8 @@ rm(list = ls())
 library(tidyverse)
 library(data.table)
 library(devtools)
-install_github("tomatoModelling/cumba_R_package",force=T)
-library(cumba)
+#install_github("tomatoModelling/cumba_R_package",force=T)
+#library(cumba)
 library(readxl)
 library(GA)  # Genetic Algorithm package
 
@@ -17,6 +17,9 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 # --- Load and Prepare Input Data ---
 load("tomatoFoggia.rda")
 exp_data<-tomatoFoggia
+
+
+source('..//R//Main.R')
 
 #load parameters
 load("cumbaParameters.rda")
@@ -32,12 +35,11 @@ cumba_par$DepletionFraction$value<-60
 cumba_par$FloweringMax$value<-41
 cumba_par$WaterStressSensitivity$min<-3
 cumba_par$RootIncrease$min<-.1
-
+cumba_par$HalfIntGrowth$value
 
 # Define parameters in calibration
-pars <- c("RUE", "FloweringLag", "CycleLength",
-          "HalfIntSenescence","HalfIntGrowth",
-          "KcMax", "FruitWaterContentMax",  
+pars <- c("RUE","FloweringLag", "CycleLength",  "HalfIntSenescence",
+          "HalfIntGrowth", "KcMax", "FruitWaterContentMax",  
           "WaterStressSensitivity",
           "RootIncrease", "RootDepthMax",
           "Topt")
@@ -49,8 +51,8 @@ upperPar <- vapply(pars, function(p) cumba_par[[p]]$max, numeric(1))
 lowerPar <- unname(lowerPar)
 upperPar <- unname(upperPar)
 
-lowerPar<-c(2.4, 15, 800, 80, 15, .9, 0.85,  6, .9,  90, 22)
-upperPar<-c(2.9, 25, 1200, 88, 25, 1, 0.92,  9, 1.2,  120, 28)
+lowerPar<-c(2.3, 15, 1250, 90, 15, 1, 0.85,  6, .9,  90, 22)
+upperPar<-c(3.5,20, 1600,  100, 30, 1.15, 0.92,  9, 1.2,  120, 28)
 
 # --- Define Genetic Algorithm Loss Function ---
 lossFunctionGA <- function(params, weather) {
@@ -145,6 +147,9 @@ cumba_par$FruitWaterContentMax$value         <- paramCalibrated[7]
 cumba_par$WaterStressSensitivity$value <- paramCalibrated[8]
 cumba_par$RootIncrease$value        <- paramCalibrated[9]
 cumba_par$RootDepthMax$value        <- paramCalibrated[10]
+cumba_par$HalfIntSenescence$value <- 80
+
+cumba_par$CycleLength$value  *80/100
 
 
 
@@ -202,16 +207,18 @@ optimizedSimulation <- optimizedSimulation %>%
     last_row = row_number_within_group == n(),
     across(starts_with("Y_TOT"), ~ if_else(last_row, ., NA))
   ) %>%
-  select(-row_number_within_group, -last_row) %>%
+  dplyr::select(-row_number_within_group, -last_row) %>%
   ungroup()
 
 # --- Visualization ---
 
 ggplot(optimizedSimulation, aes(x = daysAfterSowing)) +
+  geom_line(aes(x = doy, y = cycleCompletion*8), color = "tomato3", alpha = 1, size = 1) +
   #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
   geom_line(aes(x = doy, y = fIntAct), color = "tomato3", alpha = 1, size = 1) +
-  geom_line(aes(x = doy, y = fIntPot), color = "tomato3", alpha = 1, size = 1) +
-  #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
+  geom_line(aes(x = doy, y = fIntPot), color = "blue", alpha = 1, size = 1) +
+   geom_line(aes(x = doy, y = fruitsStateAct), color = "tomato3", alpha = 1, size = 1) +
+   geom_line(aes(x = doy, y = fruitFreshWeightAct), color = "tomato3", alpha = 1, size = 2) +
   #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
   
   # stat_summary(
@@ -228,7 +235,7 @@ ggplot(optimizedSimulation, aes(x = daysAfterSowing)) +
   geom_col(aes(x = doy, y = irrigation * 0.01), fill = "aquamarine4", width = 0.7) +
   theme_classic() +
   xlim(120, 230) +
-  facet_wrap(~experiment, ncol = 8, scales = "free_y") +
+  facet_wrap(~experiment, ncol = 8) +
   scale_y_continuous(name = "Soil water content (m³/m³)",
                      sec.axis = sec_axis(trans = ~ ./0.01,
                                          name = "Precipitation and Irrigation (mm)")) +
@@ -246,5 +253,9 @@ out_calib <- as.data.frame(optimizedSimulation) |>
   group_by(experiment) |>
   slice_tail()
 
+
+ga_results<-readRDS('ga_result_fc.rds')
+
+params<-ga_results[1]
 
 
