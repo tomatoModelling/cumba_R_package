@@ -4,17 +4,22 @@ rm(list = ls())
 # Load required packages
 library(tidyverse)
 library(data.table)
+library(devtools)
+install_github("tomatoModelling/cumba_R_package",force=T)
 library(cumba)
 library(readxl)
 library(GA)  # Genetic Algorithm package
+
 
 # Set working directory to the script's location
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 # --- Load and Prepare Input Data ---
+load("tomatoFoggia.rda")
 exp_data<-tomatoFoggia
 
 #load parameters
+load("cumbaParameters.rda")
 cumba_par <- cumbaParameters
 cumba_par$Topt$value <- 25
 cumba_par$Tcold$value<-5
@@ -123,11 +128,11 @@ results_list <- list(
 )
 
 # Save results to file
-saveRDS(results_list, file = "ga_result.rds")
+saveRDS(results_list, file = "ga_result_fc.rds")
 
 # --- Run Simulation with Optimized Parameters ---
 
-paramCalibrated <- readRDS("ga_result.rds")[[1]]
+paramCalibrated <- readRDS("ga_result_fc.rds")[[1]]
 #paramCalibrated<-cumba::cumbaParameters
 # Update model parameters
 cumba_par$RUE$value                 <- paramCalibrated[1]
@@ -157,23 +162,26 @@ out_calib <- as.data.frame(optimizedSimulation) |>
   slice_tail()
 
 
-lmYield <- lm(yield ~ yield_ref, data = out_calib)
+lmYield <- lm(fruitFreshWeightAct ~ yield_ref, data = out_calib)
 summary(lmYield)
+
+
+
 
 # Scatter plot with regression
 scatterYield <- out_calib |>
-  ggplot(aes(x = yield_ref, y = yield)) +
+  ggplot(aes(x = yield_ref, y = fruitFreshWeightAct*0.01)) +
   geom_point() +
   geom_smooth(method = "lm", formula = y ~ x)
 scatterYield
 
 
-lmBrix<- lm(brix ~ brix_ref, data = out_calib)
+lmBrix<- lm(brixAct ~ brix_ref, data = out_calib)
 summary(lmBrix)
 
 # Scatter plot with regression
 scatterBrix <- out_calib |>
-  ggplot(aes(x = brix_ref, y = brix)) +
+  ggplot(aes(x = brix_ref, y = brixAct)) +
   geom_point() +
   geom_smooth(method = "lm", formula = y ~ x)
 scatterBrix
