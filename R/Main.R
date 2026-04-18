@@ -224,7 +224,7 @@ cumba_experiment <- function(weather,
   x<-seq(0:100)
   floweringPotentialFunction<-sapply(x, floweringDynamics, floweringSlope=floweringSlope,       floweringLag=floweringLag, floweringMax=floweringMax)
   floweringPotentialSum<-sum(floweringPotentialFunction)
-  
+  #browser()
   #Define the output vector with column names for the results dataframe ----
     outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState','ftsw',
@@ -314,6 +314,8 @@ cumba_experiment <- function(weather,
         ws<-1
         wc1_y<-wiltingPoint+((fieldCapacity-wiltingPoint)*(soilWaterInitial/100))
         wc2_y<-wc1_y
+        kcMaxAct<-0
+        cycleFIntMax<-0
         
         # Current year being processed 
         thisYear <- years[year][[1]]
@@ -428,8 +430,18 @@ cumba_experiment <- function(weather,
           }
           
           ## Compute crop coefficient (Kc) and real ET ----
-          kc<- kcCompute(fIntAct,kcIni, kcMax)
-          etR<-etRCompute(et0, fIntAct,kcIni,kcMax)
+            fIntY<-0
+          if(length(outputs)>0) {
+            fIntY<-outputs[[as.character(doy-1)]][['fIntAct']]
+          }
+    if (fIntAct<fIntY & kcMaxAct==0) {
+      kcMaxAct=outputs[[as.character(doy-1)]][['kc']]
+      cycleFIntMax=outputs[[as.character(doy-1)]][['cycleCompletion']]
+    }
+          
+          kc<- kcCompute(fIntAct,kcIni, kcMax,kcMaxAct,cycleFIntMax, cycleCompletion)
+          etR<-etRCompute(et0, kc)
+    
           
           ## Compute soil water content at 1 layer (3cm)----
           #1. Reinitialize days no rain
@@ -514,15 +526,25 @@ cumba_experiment <- function(weather,
           }
           
           fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
-          
+          if(phenoCode==3) {
+            startFruitDecrease<-floweringLag+(100-floweringLag)/2
+            test<-(cycleCompletion- startFruitDecrease)/(100- startFruitDecrease)
+            fruitSetCoefficient=fruitSetCoefficient-test
+          }
+          if(fruitSetCoefficient<0) {
+            fruitSetCoefficient=0
+          } 
+            
           ### reinitialize states----
           fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
           
           ### check the phenological stage (only after flowering)----
-          if(cycleCompletion>=floweringLag){
-            fruitsRateIde <- carbonRateIde
+          if(cycleCompletion>=floweringLag &
+             cycleCompletion<100){
+           #browser()
+             fruitsRateIde <- carbonRateIde
             fruitsRatePot<-carbonRatePot * fruitSetCoefficient
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
@@ -1320,16 +1342,22 @@ coldStressLinear<-function(tN,tBase,tCold)
   ## Real evapotranspiration ----
         # kc (https://pismin.com/10.1007/s00271-011-0312-2) ----
 #' @keywords internal         
-kcCompute<-function(fInt,kcIni,kcMax)
-{
-  kc<- kcIni + (kcMax - kcIni) * fInt
+kcCompute<-function(fInt,kcIni,kcMax,kcMaxAct, cycleFIntMax,cyclePerc)
+{ 
+  if (kcMaxAct==0) {
+    kc<- kcIni + (kcMax - kcIni) * fInt
+  }
+  else {
+  kcFinal<- (kcIni+kcMaxAct)*0.5
+  cyclePercSen<- (cyclePerc - cycleFIntMax)/(100-cycleFIntMax)
+     kc<- kcFinal+(kcMaxAct-kcFinal) *(1- cyclePercSen)
+  }
   return(kc)
 }
         # Real evapotranspiration ----
 #' @keywords internal         
-etRCompute<-function(et0,fInt,kcIni,kcMax)
+etRCompute<-function(et0,kc)
 {
-  kc <- kcCompute(fInt,kcIni,kcMax)
   etR<-et0*kc
   return(etR)
 }
@@ -1364,7 +1392,7 @@ phenoPhases<-function(gddState,cycleLength,transplantingLag,floweringLag)
   {
     phenoCode<-1
     phenoStage<-'vegetative'
-  }else if (gddState < cycleLength*(100-floweringLag)/100)
+  }else if (gddState < (cycleLength*floweringLag/100) + (((100-floweringLag)/2)/100) *cycleLength)
   {
     phenoCode<-2
     phenoStage<-'reproductive'

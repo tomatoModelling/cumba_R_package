@@ -68,9 +68,8 @@ We calibrate ET₀ and RAD estimation methods against observed reference data.
 
 ```{r simulations, echo=T}
 
-source("C:\\Users\\Administrator\\OneDrive - CREA\\Desktop\\model dev\\cumba\\cumba_R_package\\R\\Main.R")
 
-weather_df <- read.csv("C:\\Users\\Administrator\\OneDrive - CREA\\Desktop\\model dev\\cumba\\cumba_R_package\\testFiles\\weather_foggia.csv") |> 
+weather_df<- read.csv("C:\\Users\\feder\\OneDrive - Università degli studi della Tuscia di Viterbo\\Desktop\\Git\\cumba_R_package\\testFiles\\weather_foggia.csv") |> 
   mutate(Rg=as.numeric(Rg),
          ET0 = as.numeric(ET0),
          date = as.Date(MDATE,format='%m/%d/%Y'),
@@ -86,10 +85,10 @@ ggplot(weather_df, aes(x=doy))+
 weather<-weather_df |> filter(year(DATE)==1951)
 param<-cumba::cumbaParameters
 out<-cumba_scenario(weather_df,
-                    cumba::cumbaParameters)
+                    cumba::cumbaParameters, fullOut = T)
 
 out_sim<-out |> 
-  select(year,doy,et0,radiation) |> 
+  dplyr::select(year,doy,et0,radiation) |> 
   left_join(weather_df)
 
 
