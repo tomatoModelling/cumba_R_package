@@ -286,17 +286,20 @@ cumba_experiment <- function(weather,
  
     for(year in 1:length(years))
     {
-      idsYear <- ids |> filter(YEAR == years[[year]])
-     
-      #Iterate through each experiment in the current year ----    
+      idsYear <- ids[ids$YEAR == years[[year]], , drop = FALSE]
+
+      #Iterate through each experiment in the current year ----
       #TODO: for debug
       experiment<-1
       outputsExperiment <-list() #clean the list each experiment
-    
-      for(experiment in 1:length(unique(idsYear$ID)))
+
+      # Pre-compute experiment ids once (era ricalcolato 2x ad ogni iterazione)
+      exp_ids <- unique(idsYear$ID)
+
+      for(experiment in 1:length(exp_ids))
       {
         # Filter the irrigation data for the current experiment
-        thisExperiment <- idsYear |> filter(ID == unique(idsYear$ID)[[experiment]])
+        thisExperiment <- idsYear[idsYear$ID == exp_ids[[experiment]], , drop = FALSE]
         thisId<-unique(thisExperiment$ID)
         
         #Initialize state variables
@@ -323,44 +326,64 @@ cumba_experiment <- function(weather,
         # Subset the weather data for the current year
         dfYear <- dfSite[dfSite$year == thisYear, ]
 
-        # Iterate through each day in the current year ----       
+        # ---- Pre-estrazione vettoriale dei meteo (logica invariata) ----
+        # Evita centinaia di lookup `dfYear[day, col]` dentro il loop giornaliero
+        n_days   <- nrow(dfYear)
+        tx_vec   <- round(as.numeric(dfYear[[TxColID]]), 2)
+        tn_vec   <- round(as.numeric(dfYear[[TnColID]]), 2)
+        p_vec    <- as.numeric(dfYear[[PColID]])
+        doy_vec  <- dfYear[[DOYColID]]
+        date_vec <- dfYear[[1]]
+        lat_vec  <- if (estimateRad == T) round(as.numeric(dfYear[[LatColID]]), 2) else NULL
+        rad_vec  <- if (estimateRad == F) round(as.numeric(dfYear[[RadColID]]), 2) else NULL
+        et0_vec  <- if (estimateET0 == F) round(as.numeric(dfYear[[ET0ColID]]), 2) else NULL
+        # Look-up irrigazione (idem)
+        exp_dates <- thisExperiment$DATE
+        exp_wvol  <- thisExperiment$WVOL
+
+        # Iterate through each day in the current year ----
         #TODO: for debug
         day<-1
         outputs<-list() #clean the list each year
-        for(day in 1:nrow(dfYear))
+        for(day in 1:n_days)
         {
-          
+
           # Current date being processed
-          date<-(dfYear[day,1])[[1]]
-          
+          date <- date_vec[day]
+
           # Filter the irrigation data (mm) for the current date
-          irrigationFilter<- thisExperiment |> filter(DATE==date)
-          irrigation<-0
-          if(nrow(irrigationFilter)==1){irrigation <- irrigationFilter$WVOL}
-          
+          irr_idx    <- which(exp_dates == date)
+          irrigation <- if (length(irr_idx) == 1L) exp_wvol[irr_idx] else 0
+
           # Extract weather data for the current day
-          tX <- round(as.numeric(dfYear[day,TxColID]),2) #Maximum temperature, °C
-          tN<-round(as.numeric(dfYear[day,TnColID]),2) #Minimum temperature, °C
-          doy <- dfYear[day,DOYColID][[1]] #Day of the year
-          tAve<-(tX+tN)*0.5 #Maximum temperature, °C
-          p<-as.numeric(dfYear[day,PColID]) #Precipitation, mm
+          tX  <- tx_vec[day]                   #Maximum temperature, °C
+          tN  <- tn_vec[day]                   #Minimum temperature, °C
+          doy <- doy_vec[day]                  #Day of the year
+          tAve <- (tX + tN) * 0.5
+          p   <- p_vec[day]                    #Precipitation, mm
           #radiation
-          radSim<-0
-          Lat <- round(as.numeric(dfYear[day,LatColID]),2)
+          radSim <- 0
+          Lat <- lat_vec[day]
           if(estimateRad == T){
             radSim <- radiationCompute(Lat,doy,tX,tN) #Simulated radiation, MJ m-2 d-1
           }
           else{
-            radSim <- round(as.numeric(dfYear[day,RadColID]),2) #Radiation, MJ m-2 d-1
+            radSim <- rad_vec[day]              #Radiation, MJ m-2 d-1
           }
-          
+
           #ET0
           et0<-0
           if(estimateET0 == T){
             et0<-et0Compute(Lat,doy,tX,tN)
           }else{
-            et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #ET0, mm d-1
+            et0 <- et0_vec[day]                  #ET0, mm d-1
           }
+
+          # Cache delle chiavi del dizionario `outputs` per il giorno corrente/precedente
+          # (era ricalcolato come.character(doy-1) ~15 volte/giorno)
+          doy_chr   <- as.character(doy)
+          doy_y_chr <- as.character(doy - 1L)
+          prev      <- outputs[[doy_y_chr]]    # NULL il primo giorno
           
           #compute gdd
           gdd<-gdd_compute(tAve,tBase,tOpt,tMax) #Growing degree day
@@ -370,10 +393,10 @@ cumba_experiment <- function(weather,
   
           
           #fix cycle completion at 100 if exceeds
-          if(cycleCompletion>=100)
-          {
-            cycleCompletion = 100
-          }
+          # if(cycleCompletion>=100)
+          # {
+          #   cycleCompletion = 100
+          # }
           
           
           ## Compute root depth (cm)----     
@@ -400,19 +423,19 @@ cumba_experiment <- function(weather,
                                halfIntSenescence,initialInt,gddState)
           
           if(length(outputs)>0 & phenoCode>=1){ 
-            fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
-            fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+            fIntPotRate <- fIntPot-prev[['fIntPot']]
+            fIntActRate <- fIntPotRate*prev[['waterStress']]
             
             fIntModifier<-0
             if(fIntPotRate>0){
-              fIntModifier<-fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+              fIntModifier<-fIntPotRate*prev[['waterStress']]
             }
             else
             {
-              fIntModifier<-fIntPotRate*(1+(1-outputs[[as.character(doy-1)]][['waterStress']]))
+              fIntModifier<-fIntPotRate*(1+(1-prev[['waterStress']]))
             }
             
-            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntModifier
+            fIntAct<-prev[['fIntAct']] + fIntModifier
             
             
             if(fIntAct<0)
@@ -432,11 +455,11 @@ cumba_experiment <- function(weather,
           ## Compute crop coefficient (Kc) and real ET ----
             fIntY<-0
           if(length(outputs)>0) {
-            fIntY<-outputs[[as.character(doy-1)]][['fIntAct']]
+            fIntY<-prev[['fIntAct']]
           }
     if (fIntAct<fIntY & kcMaxAct==0) {
-      kcMaxAct=outputs[[as.character(doy-1)]][['kc']]
-      cycleFIntMax=outputs[[as.character(doy-1)]][['cycleCompletion']]
+      kcMaxAct=prev[['kc']]
+      cycleFIntMax=prev[['fIntAct']]
     }
           
           kc<- kcCompute(fIntAct,kcIni, kcMax,kcMaxAct,cycleFIntMax, cycleCompletion)
@@ -457,8 +480,8 @@ cumba_experiment <- function(weather,
           #ftsw calculation
           if(length(outputs)>0)
           {
-            wc1_y <- outputs[[as.character(doy-1)]][['wc1']]
-            wc2_y <- outputs[[as.character(doy-1)]][['wc2']]
+            wc1_y <- prev[['wc1']]
+            wc2_y <- prev[['wc2']]
           }
           
           if (rootState>3){
@@ -514,10 +537,10 @@ cumba_experiment <- function(weather,
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
             floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
-                                    outputs[[as.character(doy-1)]][['floweringStateIde']]) 
+                                    prev[['floweringStateIde']]) 
             floweringRateAct <-floweringRateIde*(1-hs)*(1-cs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
-                                     outputs[[as.character(doy-1)]][['floweringStateAct']])  
+                                     prev[['floweringStateAct']])  
           }else{
             floweringRateIde<-0
             floweringStateIde<-0
@@ -555,13 +578,13 @@ cumba_experiment <- function(weather,
           ### check if it is the first day----
           if(length(outputs)>0) #
           {
-            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']]
-            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']]
-            fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
+            fruitsStateIde<-fruitsRateIde+ prev[['fruitsStateIde']]
+            fruitsStatePot<-fruitsRatePot+ prev[['fruitsStatePot']]
+            fruitsStateAct<-fruitsRateAct+ prev[['fruitsStateAct']]
             #for BRIX
-            carbonSugarState_1<-outputs[[as.character(doy-1)]][['carbonSugarState']]
-            fruitWaterContentPot_y<-outputs[[as.character(doy-1)]][['fruitWaterContentPot']]
-            fruitWaterContentAct_y<-outputs[[as.character(doy-1)]][['fruitWaterContentAct']]
+            carbonSugarState_1<-prev[['carbonSugarState']]
+            fruitWaterContentPot_y<-prev[['fruitWaterContentPot']]
+            fruitWaterContentAct_y<-prev[['fruitWaterContentAct']]
           }
           else
           {
@@ -595,7 +618,7 @@ cumba_experiment <- function(weather,
           
           
           ## Populate output variables----
-            outputs[[as.character(doy)]]<-setNames(list(
+            outputs[[doy_chr]]<-setNames(list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
               gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
               trc1, ev1, dc1, wc1mm, daysNoRain, 
@@ -904,15 +927,18 @@ cumba_scenario <- function(weather, param,
       idsYear<- data.frame(ID = rep(year,  length(availableYears)),
                              YEAR = years)
       
-      #Iterate through each experiment in the current year ----    
+      #Iterate through each experiment in the current year ----
       #TODO: for debug
       experiment<-1
       outputsExperiment <-list() #clean the list each experiment
-      
-      for(experiment in 1:length(unique(idsYear$ID)))
+
+      # Pre-compute experiment ids once (era ricalcolato 2x ad ogni iterazione)
+      exp_ids <- unique(idsYear$ID)
+
+      for(experiment in 1:length(exp_ids))
       {
         # Filter the irrigation data for the current experiment
-        thisExperiment <- idsYear |> filter(ID == unique(idsYear$ID)[[experiment]])
+        thisExperiment <- idsYear[idsYear$ID == exp_ids[[experiment]], , drop = FALSE]
         thisId<-unique(thisExperiment$ID)
         
         #Initialize state variables
@@ -928,22 +954,39 @@ cumba_scenario <- function(weather, param,
         ws<-1
         wc1_y<-wiltingPoint+((fieldCapacity-wiltingPoint)*(soilWaterInitial/100))
         wc2_y<-wc1_y
-        
-        # Current year being processed 
+        kcMaxAct<-0
+        cycleFIntMax<-0
+
+        # Current year being processed
         thisYear <- years[year][[1]]
-        
+
         # Subset the weather data for the current year
         dfYear <- dfSite[dfSite$year == thisYear, ]
-        
-        # Iterate through each day in the current year ----       
+
+        # ---- Pre-estrazione vettoriale dei meteo (logica invariata) ----
+        n_days   <- nrow(dfYear)
+        tx_vec   <- round(as.numeric(dfYear[[TxColID]]), 2)
+        tn_vec   <- round(as.numeric(dfYear[[TnColID]]), 2)
+        p_vec    <- as.numeric(dfYear[[PColID]])
+        doy_vec  <- dfYear[[DOYColID]]
+        date_vec <- dfYear[[1]]
+        lat_vec  <- if (estimateRad == T) round(as.numeric(dfYear[[LatColID]]), 2) else NULL
+        rad_vec  <- if (estimateRad == F) round(as.numeric(dfYear[[RadColID]]), 2) else NULL
+        et0_vec  <- if (estimateET0 == F) round(as.numeric(dfYear[[ET0ColID]]), 2) else NULL
+
+        # Iterate through each day in the current year ----
         #TODO: for debug
         day<-120
         outputs<-list() #clean the list each year
-        for(day in 1:nrow(dfYear))
+        for(day in 1:n_days)
         {
-          doy <- dfYear[day,DOYColID][[1]] #Day of the year
+          doy  <- doy_vec[day]                 #Day of the year
           # Current date being processed
-          date<-(dfYear[day,1])[[1]]
+          date <- date_vec[day]
+          # Cache delle chiavi del dizionario `outputs` (logica invariata)
+          doy_chr   <- as.character(doy)
+          doy_y_chr <- as.character(doy - 1L)
+          prev      <- outputs[[doy_y_chr]]    # NULL il primo giorno
           #150 days is the maximum duration of the tomato cycle (5 months)
           if(doy>=transplantingDOY && doy <= transplantingDOY+150)
           {
@@ -951,7 +994,7 @@ cumba_scenario <- function(weather, param,
               phenoCode = 0
             }
             else{
-              phenoCode = outputs[[as.character(doy-1)]][['phenoCode']]
+              phenoCode = prev[['phenoCode']]
             }
             
             if(phenoCode == 0)
@@ -992,27 +1035,26 @@ cumba_scenario <- function(weather, param,
             }
           
           
-          # Extract weather data for the current day
-          tX <- round(as.numeric(dfYear[day,TxColID]),2) #Maximum temperature, °C
-          tN<-round(as.numeric(dfYear[day,TnColID]),2) #Minimum temperature, °C
-          doy <- dfYear[day,DOYColID][[1]] #Day of the year
-          tAve<-(tX+tN)*0.5 #Maximum temperature, °C
-          p<-as.numeric(dfYear[day,PColID]) #Precipitation, mm
-          radSim<-0
+          # Extract weather data for the current day (vettoriale, logica invariata)
+          tX   <- tx_vec[day]                #Maximum temperature, °C
+          tN   <- tn_vec[day]                #Minimum temperature, °C
+          tAve <- (tX + tN) * 0.5            #Mean temperature, °C
+          p    <- p_vec[day]                 #Precipitation, mm
+          radSim <- 0
           if(estimateRad == T)
           {
-            Lat <- round(as.numeric(dfYear[day,LatColID]),2)
+            Lat <- lat_vec[day]
             radSim <- radiationCompute(Lat,doy,tX,tN) #Simulated radiation, MJ m-2 d-1
           }else
           {
-            radSim <- round(as.numeric(dfYear[day,RadColID]),2) #Radiation, MJ m-2 d-1
+            radSim <- rad_vec[day]           #Radiation, MJ m-2 d-1
           }
           #ET0
           et0<-0
           if(estimateET0 == T){
             et0<-et0Compute(Lat,doy,tX,tN)
           }else{
-            et0 <- round(as.numeric(dfYear[day,ET0ColID]),2) #ET0, mm d-1
+            et0 <- et0_vec[day]              #ET0, mm d-1
           }
           
           #compute gdd
@@ -1054,19 +1096,19 @@ cumba_scenario <- function(weather, param,
                                halfIntSenescence,initialInt,gddState)
           
           if(length(outputs)>0 & phenoCode>=1){ 
-            fIntPotRate <- fIntPot-outputs[[as.character(doy-1)]][['fIntPot']]
-            fIntActRate <- fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+            fIntPotRate <- fIntPot-prev[['fIntPot']]
+            fIntActRate <- fIntPotRate*prev[['waterStress']]
             
             fIntModifier<-0
             if(fIntPotRate>0){
-              fIntModifier<-fIntPotRate*outputs[[as.character(doy-1)]][['waterStress']]
+              fIntModifier<-fIntPotRate*prev[['waterStress']]
             }
             else
             {
-              fIntModifier<-fIntPotRate*(1+(1-outputs[[as.character(doy-1)]][['waterStress']]))
+              fIntModifier<-fIntPotRate*(1+(1-prev[['waterStress']]))
             }
             
-            fIntAct<-outputs[[as.character(doy-1)]][['fIntAct']] + fIntModifier
+            fIntAct<-prev[['fIntAct']] + fIntModifier
             
             if(fIntAct<0){
               fIntAct=0
@@ -1081,8 +1123,17 @@ cumba_scenario <- function(weather, param,
           }
           
           ## Compute crop coefficient (Kc) and real ET ----
-          kc<- kcCompute(fIntAct,kcIni, kcMax)
-          etR<-etRCompute(et0, fIntAct,kcIni,kcMax)
+          fIntY<-0
+          if(length(outputs)>0) {
+            fIntY<-prev[['fIntAct']]
+          }
+          if (fIntAct<fIntY & kcMaxAct==0) {
+            kcMaxAct=prev[['kc']]
+            cycleFIntMax=prev[['fIntAct']]
+          }
+
+          kc<- kcCompute(fIntAct,kcIni, kcMax,kcMaxAct,cycleFIntMax, cycleCompletion)
+          etR<-etRCompute(et0, kc)
           
           ## Compute soil water content at 1 layer (3cm)----
           #1. Reinitialize days no rain
@@ -1098,8 +1149,8 @@ cumba_scenario <- function(weather, param,
           #ftsw calculation
           if(length(outputs)>0)
           {
-            wc1_y <- outputs[[as.character(doy-1)]][['wc1']]
-            wc2_y <- outputs[[as.character(doy-1)]][['wc2']]
+            wc1_y <- prev[['wc1']]
+            wc2_y <- prev[['wc2']]
           }
           
           if (rootState>3){
@@ -1163,10 +1214,10 @@ cumba_scenario <- function(weather, param,
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
             floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
-                                    outputs[[as.character(doy-1)]][['floweringStateIde']]) 
+                                    prev[['floweringStateIde']]) 
             floweringRateAct <-floweringRateIde*(1-hs)*(1-cs)
             floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
-                                     outputs[[as.character(doy-1)]][['floweringStateAct']])  
+                                     prev[['floweringStateAct']])  
           }else{
             floweringRateIde<-0
             floweringStateIde<-0
@@ -1192,13 +1243,13 @@ cumba_scenario <- function(weather, param,
           ### check if it is the first day----
           if(length(outputs)>0) #
           {
-            fruitsStateIde<-fruitsRateIde+ outputs[[as.character(doy-1)]][['fruitsStateIde']]
-            fruitsStatePot<-fruitsRatePot+ outputs[[as.character(doy-1)]][['fruitsStatePot']]
-            fruitsStateAct<-fruitsRateAct+ outputs[[as.character(doy-1)]][['fruitsStateAct']]
+            fruitsStateIde<-fruitsRateIde+ prev[['fruitsStateIde']]
+            fruitsStatePot<-fruitsRatePot+ prev[['fruitsStatePot']]
+            fruitsStateAct<-fruitsRateAct+ prev[['fruitsStateAct']]
             #for BRIX
-            carbonSugarState_1<-outputs[[as.character(doy-1)]][['carbonSugarState']]
-            fruitWaterContentPot_y<-outputs[[as.character(doy-1)]][['fruitWaterContentPot']]
-            fruitWaterContentAct_y<-outputs[[as.character(doy-1)]][['fruitWaterContentAct']]
+            carbonSugarState_1<-prev[['carbonSugarState']]
+            fruitWaterContentPot_y<-prev[['fruitWaterContentPot']]
+            fruitWaterContentAct_y<-prev[['fruitWaterContentAct']]
           }
           else
           {
@@ -1233,7 +1284,7 @@ cumba_scenario <- function(weather, param,
           
           
           ## Populate output variables----
-          outputs[[as.character(doy)]]<-setNames(list(
+          outputs[[doy_chr]]<-setNames(list(
             thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
             gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
             trc1, ev1, dc1, wc1mm, daysNoRain, 
@@ -1349,7 +1400,7 @@ kcCompute<-function(fInt,kcIni,kcMax,kcMaxAct, cycleFIntMax,cyclePerc)
   }
   else {
   kcFinal<- (kcIni+kcMaxAct)*0.5
-  cyclePercSen<- (cyclePerc - cycleFIntMax)/(100-cycleFIntMax)
+  cyclePercSen<- (cycleFIntMax-fInt)/(cycleFIntMax-.5*cycleFIntMax)
      kc<- kcFinal+(kcMaxAct-kcFinal) *(1- cyclePercSen)
   }
   return(kc)
@@ -1470,10 +1521,11 @@ soilWaterModel <- function(doy,outputs, ftsw, depletionFraction,irrigation,p,roo
   #2. Compute water stress factor from water stress of previous day
   if(length(outputs)>0) #check if it is the first day
   {
-    wc1mm<-outputs[[as.character(doy-1)]][['wc1mm']]
-    wc2mm<-outputs[[as.character(doy-1)]][['wc2mm']]
-    wc3mm <-outputs[[as.character(doy-1)]][['wc3mm']]
-    # ftsw <- outputs[[as.character(doy-1)]][['waterStress']]
+    prev   <- outputs[[as.character(doy - 1L)]]
+    wc1mm  <- prev[['wc1mm']]
+    wc2mm  <- prev[['wc2mm']]
+    wc3mm  <- prev[['wc3mm']]
+    # ftsw <- prev[['waterStress']]
   }
   else
   {

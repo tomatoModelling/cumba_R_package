@@ -1,4 +1,7 @@
-# Minimal safe config (no favicon, no URL, no extras)
+# pkgdown configuration for cumba
+# Build the site with: pkgdown::build_site()
+url: https://tomatoModelling.github.io/cumba_R_package/
+
 template:
   bootstrap: 5
   bootswatch: flatly
@@ -7,7 +10,43 @@ home:
   title: "CUMBA"
   description: "Daily tomato model for yield & Brix"
 
+navbar:
+  structure:
+    left:  [intro, reference, articles]
+    right: [github]
+  components:
+    intro:
+      text: "Get started"
+      href: articles/cumba-getting-started.html
+    articles:
+      text: "Articles"
+      menu:
+        - text: "Getting started"
+          href: articles/cumba-getting-started.html
+        - text: "Run an experiment (cumba_experiment)"
+          href: articles/cumba-experiment.html
+        - text: "Run a scenario (cumba_scenario)"
+          href: articles/cumba-scenario.html
+        - text: "Calibrate ET0 and radiation"
+          href: articles/estimate_et0_rad.html
+
 reference:
-  - title: "Functions"
+  - title: "Model runners"
+    desc: "Top-level functions to run the CUMBA daily simulation"
     contents:
       - cumba_experiment
+      - cumba_scenario
+  - title: "Data"
+    desc: "Default parameters and example datasets"
+    contents:
+      - cumbaParameters
+      - tomatoFoggia
+
+articles:
+  - title: "Tutorials"
+    navbar: ~
+    contents:
+      - cumba-getting-started
+      - cumba-experiment
+      - cumba-scenario
+      - estimate_et0_rad

@@ -33,42 +33,74 @@ source('../R/Main.R')
 #TODO: Change with optimized parameters
 cumba_par <- cumba::cumbaParameters
 
-# Perform final simulation
-optimizedSimulation <- cumba_scenario(weather |> filter(year>=2021), cumba_par,
-                                      estimateRad = T, estimateET0 = T,
-                                      transplantingDOY = 100,
-                                      waterStressLevel = list(
-                                        vegetative = 1,
-                                        reproductive = 1,
-                                        ripening = 0.2
-                                      ),
-                                      minimumTurn = list(
-                                        vegetative = 1,
-                                        reproductive = 1,
-                                        ripening = 1
-                                      ),
-                                      fullOut = T)
 
-cumba_par
-options(scipen = 999)
+vegetativeWS <- c(0.6,0.8)
+vegetativeTurn <- c(1,2)
 
-bacche<-optimizedSimulation |> 
-  group_by(year) |> 
-  filter(floweringRateIde>0.49) |> 
-  slice_head() |> 
-  select(year,doy)
+reproductiveWS <- c(0.6,0.8)
+reproductiveTurn <- c(1,2)
 
-ggplot(optimizedSimulation, aes(x=doy)) + 
-  #geom_area(aes(y=floweringRateAct),fill='pink')+
-  #geom_line(aes(y=floweringRateIde),fill='black')+
-  geom_line(aes(y=phenoCode*10),fill='black')+
- # geom_line(aes(y=fIntPot))+
-  geom_line(aes(y=waterStress*100),col='blue')+
-    geom_col(aes(y=irrigation))+
-  geom_col(aes(y=p),col='red')+
-  geom_line(aes(y=fruitFreshWeightAct/100),col='red')+
-  #geom_line(aes(y=brixAct),col='green3')+
-  geom_line(aes(y=wc2*1000),col='pink3')+
-  facet_wrap(~year)
+ripeningWS <- c(0.6,0.8)
+ripeningTurn <- c(1,2)
+
+transplantingDOY <- c(100,120)
+
+results_list <- list()
+i <- 1
+
+for (vws in vegetativeWS) {
+  for (vt in vegetativeTurn) {
+    for (rws in reproductiveWS) {
+      for (rt in reproductiveTurn) {
+        for (riws in ripeningWS) {
+          for (rit in ripeningTurn) {
+            for (td in transplantingDOY) {
+              
+              sim <- cumba_scenario(
+                weather |> dplyr::filter(year >= 2019),
+                cumba_par,
+                estimateRad = TRUE,
+                estimateET0 = TRUE,
+                irrigationStrategy = list(
+                  vegetative = list(wsLevel = vws, turnMin = vt),
+                  reproductive = list(wsLevel = rws, turnMin = rt),
+                  ripening = list(wsLevel = riws, turnMin = rit)
+                ),
+                transplantingDOY = td,
+                fullOut = FALSE
+              )
+              
+              outSynth <- sim |>
+                dplyr::summarise(
+                  yield = dplyr::last(yield),
+                  brix = dplyr::last(brix),
+                  n_irrigation = sum(irrigation > 0, na.rm = TRUE),
+                  irrigation = sum(irrigation, na.rm = TRUE)
+                )
+              
+              # aggiungi parametri
+              outSynth$vegetativeWS <- vws
+              outSynth$vegetativeTurn <- vt
+              outSynth$reproductiveWS <- rws
+              outSynth$reproductiveTurn <- rt
+              outSynth$ripeningWS <- riws
+              outSynth$ripeningTurn <- rit
+              outSynth$transplantingDOY <- td
+              
+              results_list[[i]] <- outSynth
+              i <- i + 1
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+results_df <- dplyr::bind_rows(results_list)
+
+ggplot(results_df, aes(x=factor(transplantingDOY), y= n_irrigation, fill=factor(vegetativeWS))) + 
+  geom_boxplot()+
+  facet_wrap(~vegetativeTurn)
               
 

@@ -1,0 +1,135 @@
+---
+title: "Run an experiment with cumba_experiment()"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Run an experiment with cumba_experiment()}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7, fig.height = 4,
+  message = FALSE, warning = FALSE,
+  eval    = FALSE
+)
+```
+
+# When to use `cumba_experiment()`
+
+Use `cumba_experiment()` when you have **observed experiments** with
+their actual irrigation schedule and you want CUMBA to reproduce them.
+This is the function used during **model calibration** against
+yield/Brix observations.
+
+The companion function `cumba_scenario()` is meant for *what-if*
+deficit-irrigation studies, where irrigation is triggered automatically
+based on phase-specific water-stress thresholds.
+
+# Inputs
+
+`cumba_experiment()` requires:
+
+- a daily `weather` table with `Site`, `Tx`, `Tn`, `P`, `DATE`
+  and either `Lat` (when `estimateRad = TRUE`) or `Rad`;
+- a parameter object `param` (the bundled `cumbaParameters` works);
+- an `irrigation_df` with `ID`, `Site`, `YEAR`, `DATE`, `WVOL`.
+
+# A complete walkthrough on `tomatoFoggia`
+
+```{r run}
+library(cumba)
+library(dplyr)
+library(ggplot2)
+
+data(tomatoFoggia)
+
+weather       <- tomatoFoggia$weather
+irrigation_df <- tomatoFoggia$irrigation
+production    <- tomatoFoggia$production
+
+out <- cumba_experiment(
+  weather       = weather,
+  param         = cumbaParameters,
+  irrigation_df = irrigation_df,
+  estimateRad   = TRUE,
+  estimateET0   = TRUE,
+  fullOut       = FALSE
+)
+
+head(out)
+```
+
+## Inspect simulated yield and Brix at harvest
+
+Each (site × year × experiment) ends when the cycle is complete. The
+last day of each experiment carries the harvest values:
+
+```{r harvest}
+harvest <- out |>
+  group_by(site, year, experiment) |>
+  slice_tail(n = 1) |>
+  ungroup() |>
+  select(site, year, experiment, yield, brix)
+
+harvest
+```
+
+## Compare with observations
+
+`tomatoFoggia$production` provides observed `yield_ref` (t ha⁻¹) and
+`brix_ref` (°Brix). Yields in the short output are in q ha⁻¹, so divide
+by 10:
+
+```{r compare}
+cmp <- harvest |>
+  mutate(experiment = as.integer(experiment)) |>
+  inner_join(production, by = c("experiment" = "ID")) |>
+  mutate(yield_t = yield / 10)
+
+ggplot(cmp, aes(yield_ref, yield_t)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = 2) +
+  labs(x = "Observed yield (t ha-1)",
+       y = "Simulated yield (t ha-1)",
+       title = "cumba_experiment - yield calibration check")
+
+ggplot(cmp, aes(brix_ref, brix)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = 2) +
+  labs(x = "Observed Brix (°)",
+       y = "Simulated Brix (°)",
+       title = "cumba_experiment - Brix calibration check")
+```
+
+## Daily dynamics with `fullOut = TRUE`
+
+For diagnostics or calibration of internal variables, pass
+`fullOut = TRUE`:
+
+```{r full}
+out_full <- cumba_experiment(
+  weather       = weather,
+  param         = cumbaParameters,
+  irrigation_df = irrigation_df,
+  fullOut       = TRUE
+)
+
+names(out_full)
+```
+
+You then have access to `kc`, `etR`, `fIntAct`, `carbonStateAct`,
+`floweringStateIde`, `fruitWaterContentAct`, etc. for every day.
+
+# Tips
+
+- Cardinal temperatures in `param` must satisfy `Tmax > Topt > Tbase`
+  and the soil must satisfy `FieldCapacity > WiltingPoint`; otherwise
+  the function stops with a clear error.
+- If you supply `param` as a tibble of values (instead of a list of
+  lists), make sure all the required parameter names are present —
+  the function checks them at start-up.
+- Run-time scales linearly with the number of (site × year × ID)
+  combinations: each is simulated day-by-day independently.

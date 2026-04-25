@@ -1,0 +1,151 @@
+---
+title: "Run a deficit-irrigation scenario with cumba_scenario()"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Run a deficit-irrigation scenario with cumba_scenario()}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7, fig.height = 4,
+  message = FALSE, warning = FALSE,
+  eval    = FALSE
+)
+```
+
+# Why `cumba_scenario()`?
+
+While `cumba_experiment()` reproduces an observed irrigation schedule,
+`cumba_scenario()` runs the model in **automatic deficit-irrigation
+mode**. Irrigation is triggered when, simultaneously:
+
+1. the simulated water-stress index `ws` falls **below a phase-specific
+   threshold** (`waterStressLevel`), and
+2. at least `minimumTurn` days have elapsed since the previous wetting.
+
+The amount of water applied refills the soil to **field capacity** in
+the rooted layers.
+
+This is the function to use for *what-if* studies, irrigation strategy
+design, and climate-impact assessments.
+
+# Phase-specific stress thresholds and turns
+
+`waterStressLevel` and `minimumTurn` are **named lists** with one entry
+per phenological phase:
+
+- `vegetative`   — from transplanting to flowering,
+- `reproductive` — from flowering to mid-ripening,
+- `ripening`     — from mid-ripening to harvest.
+
+Typical defaults:
+
+```{r setup}
+library(cumba)
+
+waterStressLevel <- list(vegetative = 0.5,
+                         reproductive = 0.5,
+                         ripening = 0.5)
+
+minimumTurn <- list(vegetative = 4,
+                    reproductive = 4,
+                    ripening = 4)
+```
+
+Lower thresholds (e.g. `0.3`) impose more deficit; higher thresholds
+(e.g. `0.7`) imply more frequent watering.
+
+# A complete walkthrough on `tomatoFoggia`
+
+```{r run}
+library(dplyr)
+library(ggplot2)
+
+data(tomatoFoggia)
+weather <- tomatoFoggia$weather
+
+out <- cumba_scenario(
+  weather          = weather,
+  param            = cumbaParameters,
+  estimateRad      = TRUE,
+  estimateET0      = TRUE,
+  transplantingDOY = 120,
+  waterStressLevel = waterStressLevel,
+  minimumTurn      = minimumTurn,
+  fullOut          = FALSE
+)
+
+head(out)
+```
+
+## Compare two irrigation strategies
+
+Run a *full* and a *deficit* scenario and compare yield and Brix at
+harvest:
+
+```{r compare}
+full_irr <- list(vegetative = 0.7, reproductive = 0.7, ripening = 0.6)
+deficit  <- list(vegetative = 0.4, reproductive = 0.4, ripening = 0.3)
+
+run_strategy <- function(level, label) {
+  cumba_scenario(
+    weather          = weather,
+    param            = cumbaParameters,
+    waterStressLevel = level,
+    minimumTurn      = minimumTurn,
+    transplantingDOY = 120,
+    fullOut          = FALSE
+  ) |>
+    mutate(strategy = label)
+}
+
+scen <- bind_rows(
+  run_strategy(full_irr, "Full irrigation"),
+  run_strategy(deficit,  "Deficit irrigation")
+)
+
+harvest <- scen |>
+  group_by(strategy, site, year) |>
+  slice_tail(n = 1) |>
+  ungroup() |>
+  select(strategy, site, year, yield, brix)
+
+ggplot(harvest, aes(strategy, yield, fill = strategy)) +
+  geom_boxplot() +
+  labs(y = "Yield (q ha-1)", x = NULL,
+       title = "Yield response to irrigation strategy") +
+  theme(legend.position = "none")
+
+ggplot(harvest, aes(strategy, brix, fill = strategy)) +
+  geom_boxplot() +
+  labs(y = "Brix (°)", x = NULL,
+       title = "Brix response to irrigation strategy") +
+  theme(legend.position = "none")
+```
+
+## Daily soil-water and irrigation events
+
+```{r daily}
+ggplot(scen |> filter(year == min(year)),
+       aes(doy, swc, colour = strategy)) +
+  geom_line() +
+  geom_point(aes(y = irrigation), size = 0.6) +
+  labs(x = "DOY", y = "Soil water content (%) / Irrigation (mm)",
+       title = "Soil water dynamics under two strategies")
+```
+
+# Notes
+
+- `cumba_scenario()` does **not** require an `irrigation_df`: the
+  schedule is generated internally from the stress thresholds.
+- The simulation window starts at `transplantingDOY` and ends at most
+  150 days later (typical processing-tomato cycle length).
+- The crop coefficient (`Kc`) is computed exactly as in
+  `cumba_experiment()`: it follows `kcIni` until full canopy, then
+  decreases linearly during senescence based on the achieved maximum
+  light interception. This guarantees that yield and Brix predictions
+  are directly comparable between *experiment* and *scenario* runs.

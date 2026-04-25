@@ -1,8 +1,8 @@
 ---
-title: "cumba-getting-started"
+title: "Getting started with cumba"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{cumba-getting-started}
+  %\VignetteIndexEntry{Getting started with cumba}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -10,10 +10,107 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment  = "#>",
+  fig.width = 7, fig.height = 4,
+  message = FALSE, warning = FALSE
 )
 ```
+
+# What is `cumba`?
+
+**CUMBA** (Carbon Use Model for yield and Brix Assessment) is a daily
+time-step crop model for **processing tomato**. Given daily weather and
+an irrigation schedule, it computes:
+
+- thermal time, phenology and root growth,
+- a soil-water balance on three layers,
+- carbon accumulation modulated by heat, cold and water stress,
+- fresh-fruit yield and **Brix** at harvest.
+
+The package exposes two top-level entry points:
+
+- `cumba_experiment()` — run the model on one or more **observed
+  experiments**, using a user-supplied `irrigation_df`.
+- `cumba_scenario()`   — run the model in **deficit-irrigation scenario
+  mode**, where irrigation is automatically triggered when the simulated
+  water-stress falls below a phase-specific threshold.
 
 ```{r setup}
 library(cumba)
 ```
+
+# Default parameters
+
+A complete default parameter set is bundled with the package:
+
+```{r params}
+str(cumbaParameters, max.level = 1)
+cumbaParameters$Tbase
+```
+
+`cumbaParameters` is a *named list of lists* with fields
+`value`, `min`, `max`, `description`. Both `cumba_experiment()` and
+`cumba_scenario()` accept this format directly and convert it
+internally into a tibble of values.
+
+# A bundled example dataset: `tomatoFoggia`
+
+The package ships with a real-world dataset from processing-tomato
+field trials in Foggia (Apulia, Italy):
+
+```{r data}
+data(tomatoFoggia)
+names(tomatoFoggia)
+head(tomatoFoggia$weather)
+head(tomatoFoggia$irrigation)
+head(tomatoFoggia$production)
+```
+
+# A first run
+
+The minimal call uses the default parameters and the bundled weather
+and irrigation data:
+
+```{r run, eval = FALSE}
+weather       <- tomatoFoggia$weather
+irrigation_df <- tomatoFoggia$irrigation
+
+out <- cumba_experiment(
+  weather       = weather,
+  param         = cumbaParameters,
+  irrigation_df = irrigation_df,
+  estimateRad   = TRUE,
+  estimateET0   = TRUE,
+  fullOut       = FALSE
+)
+
+head(out)
+```
+
+The output is a `data.frame` with one row per (site, year, experiment,
+day-of-year). With `fullOut = FALSE` you get the *short* output:
+
+| column        | meaning                          |
+|---------------|----------------------------------|
+| `site`        | site name                        |
+| `year`        | calendar year                    |
+| `experiment`  | experiment id                    |
+| `doy`         | day of year                      |
+| `p`           | precipitation (mm)               |
+| `irrigation`  | irrigation (mm)                  |
+| `stage`       | phenological stage               |
+| `swc`         | soil water content (%)           |
+| `yield`       | fresh fruit yield (q ha-1)       |
+| `brix`        | actual Brix (°)                  |
+
+Set `fullOut = TRUE` to get every internal state variable (carbon,
+flowering, fruit-water content, Kc, stresses, etc.).
+
+# What's next?
+
+- See **Run an experiment** (`vignette("cumba-experiment")`) for a
+  complete experiment-mode walkthrough on `tomatoFoggia`.
+- See **Run a scenario** (`vignette("cumba-scenario")`) for the
+  deficit-irrigation mode.
+- See **Calibrate ET₀ and radiation**
+  (`vignette("estimate_et0_rad")`) for the radiation/ET₀ workflow.

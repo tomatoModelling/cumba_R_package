@@ -1,112 +1,139 @@
 ---
-title: "Calibration of ET₀ and Radiation for Tomato Irrigation with cumbà"
+title: "Calibration of ET0 and Radiation for Tomato Irrigation with cumba"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Calibration of ET₀ and Radiation for Tomato Irrigation with cumbà}
+  %\VignetteIndexEntry{Calibration of ET0 and Radiation for Tomato Irrigation with cumba}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
-css: vignette.css
 ---
 
-<style>
-.main-container { max-width: 1200px !important; }
-table, .table, .table-condensed { font-size: 85% !important; }
-caption { white-space: nowrap; }
-</style>
-
-# 🎯 Goal
-
-This vignette demonstrates how to use cumbà to assist tomato farmers in irrigation scheduling by calibrating and estimating reference evapotranspiration (ET₀) and solar radiation (RAD) using weather station data.
-
-The workflow follows three progressive steps:
-
-- Calibration: estimate ET₀ and RAD parameters using a subset of weather station records.
-- Parameter averaging: derive robust mean coefficients across calibration sites/periods.
-- Validation: apply averaged parameters to independent datasets and compare estimated vs observed ET₀ and RAD.
-
-We rely on open access weather data (NASA POWER or local agromet stations) and simple crop metadata (sowing/harvest dates for tomato experiments).
-
-```{r options, echo=FALSE}
+```{r, include = FALSE}
 knitr::opts_chunk$set(
-  collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4,
-  message = FALSE, warning = FALSE
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7, fig.height = 4,
+  message = FALSE, warning = FALSE,
+  eval    = FALSE
 )
 ```
 
-# 📦 Packages
-We load cumbà plus helper libraries for wrangling, visualization, and reproducible tables.
+# Goal
 
-```{r libraries, echo=T}
+This vignette demonstrates how to use **cumba** to assist tomato
+farmers in irrigation scheduling by calibrating and estimating
+**reference evapotranspiration (ET₀)** and **solar radiation (RAD)**
+from weather-station data.
+
+The workflow follows three progressive steps:
+
+- **Calibration** — estimate ET₀ and RAD with the Hargreaves-style
+  formulae embedded in `cumba_scenario()`/`cumba_experiment()` and
+  compare them with observed values from a sub-period.
+- **Parameter averaging** — derive robust mean coefficients across
+  calibration sites/periods.
+- **Validation** — apply the averaged parameters to independent
+  datasets and compare estimated vs observed ET₀ and RAD.
+
+We rely on open-access weather data (NASA POWER or local agromet
+stations) and simple crop metadata (sowing/harvest dates for tomato
+experiments).
+
+# Packages
+
+```{r libraries}
 library(cumba)
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
 library(lubridate)
-library(scales)
-library(kableExtra)
 ```
 
-# 📥 Data loading
+# Data
 
-We use two data sources:
+The package ships with a real-world weather dataset from Foggia
+(processing-tomato area, Apulia, Italy). It already contains daily
+`Tx`, `Tn`, `P`, `Rad` and the columns `Site` and `Lat` required by
+the model.
 
-- weather_data: daily records from a weather station (temperature, humidity, wind, sunshine or cloud cover).
-- reference_data: observed ET₀ (from lysimeter or FAO-56 Penman–Monteith reference calculations).
-
-# 🛰 Weather station data
-
-Example: daily max/min temperature, humidity, wind speed, and sunshine hours for a tomato-growing region.
-
-# 🧪 Step 1 – Calibration of ET₀ and RAD
-
-We calibrate ET₀ and RAD estimation methods against observed reference data.
-
-👉 Workflow:
-
-- Select a subset of days/sites for calibration.
-- Estimate ET₀ and RAD using initial formulae (e.g., Hargreaves, Angström, FAO-56 PM).
-- Adjust coefficients (α, β, Krs) via optimization.
-- Collect estimated parameters.
-
-```{r simulations, echo=T}
-
-
-weather_df<- read.csv("C:\\Users\\feder\\OneDrive - Università degli studi della Tuscia di Viterbo\\Desktop\\Git\\cumba_R_package\\testFiles\\weather_foggia.csv") |> 
-  mutate(Rg=as.numeric(Rg),
-         ET0 = as.numeric(ET0),
-         date = as.Date(MDATE,format='%m/%d/%Y'),
-         doy=yday(date),
-         year=year(date)) |> 
-  rename(Tx=TMAX,Tn=TMIN,P=RAIN,DATE=date) |> 
-  mutate(Site='Foggia',Lat=41.2645)
-
-ggplot(weather_df, aes(x=doy))+
-  stat_summary(geom='ribbon',aes(y=Rg))+
-  stat_summary(geom='ribbon',aes(y=ET0),fill='blue')
-
-weather<-weather_df |> filter(year(DATE)==1951)
-param<-cumba::cumbaParameters
-out<-cumba_scenario(weather_df,
-                    cumba::cumbaParameters, fullOut = T)
-
-out_sim<-out |> 
-  dplyr::select(year,doy,et0,radiation) |> 
-  left_join(weather_df)
-
-
-ggplot(out_sim,aes(x=doy))+
-  stat_summary(geom='ribbon',aes(y=et0))+#simulated
-  stat_summary(geom='ribbon',aes(y=ET0),fill='grey')
-
-ggplot(out_sim,aes(x=doy))+
-  stat_summary(geom='ribbon',aes(y=radiation))+#simulated
-  stat_summary(geom='ribbon',aes(y=Rg),fill='grey')
-
-
-ggplot(out_sim,aes(x=radiation,y=Rg))+
-  geom_point()+
-  ylim(0,35)+
-  xlim(0,35)+
-  geom_smooth(method='lm')
-
-
-
+```{r data}
+data(tomatoFoggia)
+weather <- tomatoFoggia$weather
+str(weather)
 ```
+
+If you want to reproduce the calibration on your own data, a CSV with
+the same columns is shipped under `testFiles/weather_foggia.csv`.
+
+# Step 1 — Run the model with internal ET₀/Rad estimation
+
+Set `estimateRad = TRUE` and `estimateET0 = TRUE` to have CUMBA
+compute radiation and ET₀ internally using temperature-based
+formulae:
+
+```{r run}
+out <- cumba_scenario(
+  weather     = weather,
+  param       = cumbaParameters,
+  estimateRad = TRUE,
+  estimateET0 = TRUE,
+  fullOut     = TRUE
+)
+
+out_sim <- out |>
+  dplyr::select(year, doy, et0, radiation)
+
+head(out_sim)
+```
+
+# Step 2 — Compare simulated vs observed
+
+`tomatoFoggia$weather` provides observed daily radiation `Rad`
+(MJ m⁻² d⁻¹). Joining it with the simulated outputs gives the
+calibration scatter plots:
+
+```{r compare}
+obs <- weather |>
+  mutate(year = year(DATE), doy = yday(DATE)) |>
+  select(year, doy, Rad)
+
+cmp <- out_sim |>
+  inner_join(obs, by = c("year", "doy"))
+
+ggplot(cmp, aes(radiation, Rad)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2) +
+  xlim(0, 35) + ylim(0, 35) +
+  labs(x = "Simulated radiation (MJ m-2 d-1)",
+       y = "Observed radiation (MJ m-2 d-1)",
+       title = "Hargreaves-based radiation vs. measured")
+
+ggplot(cmp, aes(doy)) +
+  stat_summary(geom = "ribbon", aes(y = radiation), alpha = 0.4) +
+  stat_summary(geom = "ribbon", aes(y = Rad), fill = "grey50", alpha = 0.4) +
+  labs(x = "DOY", y = "Radiation (MJ m-2 d-1)",
+       title = "Seasonal pattern (simulated vs observed)")
+```
+
+# Step 3 — Validation on an independent year
+
+Hold out one season and compare:
+
+```{r validate}
+cal_years <- sort(unique(cmp$year))
+val_year  <- tail(cal_years, 1)
+
+val <- cmp |> filter(year == val_year)
+
+ggplot(val, aes(doy)) +
+  geom_line(aes(y = radiation, colour = "simulated")) +
+  geom_line(aes(y = Rad,       colour = "observed"))  +
+  labs(x = "DOY", y = "Radiation (MJ m-2 d-1)",
+       title = paste("Validation - year", val_year),
+       colour = NULL)
+```
+
+# Going further
+
+If your weather station provides observed ET₀, set
+`estimateET0 = FALSE` and add an `ET0` column to `weather`. CUMBA will
+then use the observed values directly, isolating the radiation
+estimator from the ET₀ estimator during calibration.
