@@ -1,52 +1,106 @@
-# Clear environment
-rm(list = ls())
-dev.off(dev.list()["RStudioGD"])  # delete all plots
+# =====================================================================
+# DEV-MODE BOOTSTRAP — modifica Main.R, salva, RIESEGUI da QUI
+# =====================================================================
+# Questo blocco serve a garantire che ogni esecuzione legga la versione
+# AGGIORNATA di R/Main.R, senza interferenze del package installato.
+# Se vedi l'errore "kcCompute non aggiornato" significa che il source
+# NON ha letto il file che pensi → controlla getwd()/path/OneDrive.
+# =====================================================================
 
-# Load required packages
+# 1) Pulizia totale: env + plot + qualunque versione di cumba in memoria
+rm(list = ls())
+try(dev.off(dev.list()["RStudioGD"]), silent = TRUE)
+while ("package:cumba" %in% search()) {
+  detach("package:cumba", unload = TRUE, character.only = FALSE)
+}
+if ("cumba" %in% loadedNamespaces()) unloadNamespace("cumba")
+
+# 2) Pacchetti di supporto (NON cumba — quello lo carichiamo dai sorgenti)
 library(tidyverse)
 library(data.table)
 library(devtools)
-#install_github("tomatoModelling/cumba_R_package",force=T)
-library(cumba)
 library(readxl)
-library(GA)  # Genetic Algorithm package
+library(GA)
 
+# 3) Trova la root del package (quella con DESCRIPTION + cartella R/)
+#    Funziona sia se lanci lo script da RStudio (Source) sia da console.
+find_pkg_root <- function() {
+  # se hai aperto lo script in RStudio, parte da li'
+  start <- tryCatch(
+    dirname(rstudioapi::getActiveDocumentContext()$path),
+    error = function(e) getwd()
+  )
+  if (is.null(start) || start == "") start <- getwd()
+  d <- normalizePath(start, winslash = "/", mustWork = FALSE)
+  for (i in 1:6) {
+    if (file.exists(file.path(d, "DESCRIPTION")) &&
+        dir.exists(file.path(d, "R"))) return(d)
+    d <- dirname(d)
+  }
+  stop("Non trovo la root del package cumba (DESCRIPTION + R/). getwd()=",
+       getwd())
+}
+pkg_root <- find_pkg_root()
+setwd(pkg_root)
+cat("[DEV] package root :", pkg_root, "\n")
+cat("[DEV] Main.R mtime :",
+    format(file.info(file.path(pkg_root, "R", "Main.R"))$mtime), "\n")
 
-# Set working directory to the script's location
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+# 4) Carica TUTTI i sorgenti dalla cartella R/ (Main.R, parameters.R, ...)
+#    load_all() rifa' il binding di OGNI funzione interna nel namespace,
+#    quindi anche le chiamate fra helper (kcCompute, etRCompute, ...) usano
+#    le versioni aggiornate. Niente trucchi di scoping con globalenv.
+devtools::load_all(pkg_root, quiet = TRUE)
+
+# 5) SANITY CHECK — se Main.R non e' stato letto correttamente, fermati ORA
+.kc_args <- names(formals(kcCompute))
+.expected_kc <- c("fInt","kcIni","kcMax","kcMaxAct","cycleFIntMax","cyclePerc")
+if (!identical(.kc_args, .expected_kc)) {
+  stop("kcCompute NON aggiornato. Firma trovata: (",
+       paste(.kc_args, collapse = ", "),
+       "). Attesa: (", paste(.expected_kc, collapse = ", "), ").\n",
+       " -> Probabile causa: source da working dir sbagliata, ",
+       "OneDrive sync, o file ", normalizePath("R/Main.R"), " non salvato.")
+}
+.et_args <- names(formals(etRCompute))
+if (!identical(.et_args, c("et0","kc"))) {
+  stop("etRCompute NON aggiornato. Firma trovata: (",
+       paste(.et_args, collapse = ", "), "). Attesa: (et0, kc).")
+}
+cat("[DEV] kcCompute/etRCompute OK (versione aggiornata caricata)\n")
+
+# =====================================================================
+# FINE DEV-MODE BOOTSTRAP — da qui in giu' codice originale
+# =====================================================================
+
+inputDir <- 'testFiles'
 
 # --- Load and Prepare Input Data ---
-load("tomatoFoggia.rda")
-exp_data<-tomatoFoggia
-
-
-source('..//R//Main.R')
+exp_data <- cumba::tomatoFoggia
 
 #load parameters
-load("cumbaParameters.rda")
-cumba_par <- cumbaParameters
+cumba_par <- cumba::cumbaParameters
 #new parameters set
 cumba_par$RUE$value<-2.8 #2-3.5
 cumba_par$HalfIntGrowth$value<-19 #10-40
-cumba_par$HalfIntSenescence$value<-128 #110-140
+cumba_par$HalfIntSenescence$value<-113 #110-140
 cumba_par$KcMax$value<-1.15 #1 - 1.2 #0.9-1.25
-cumba_par$FruitWaterContentMax$value<-0.92 #0.88-0.98
-cumba_par$RootDepthMax$value<-94 #50-90
+cumba_par$FruitWaterContentMax$value<-0.91 #0.88-0.98
+cumba_par$RootDepthMax$value<-67 #50-90
 cumba_par$FloweringLag$value<-30  # =35da osservazione con dati osservati #20-50
-cumba_par$CycleLength$value<-1200  #1200-1600  
+cumba_par$CycleLength$value<-1216  #1200-1600  
 cumba_par$WaterStressSensitivity$value<-7 #6-10
-cumba_par$RootIncrease$value<-0.7 #0.5-1.5
+cumba_par$RootIncrease$value<-0.55 #0.5-1.5
 cumba_par$Topt$value<-24 #22-28
 cumba_par$k0$value<-4 #2-6
 cumba_par$FruitWaterContentDecreaseMax$value<-0.01 #0.0001-0.001
 cumba_par$FruitWaterContentInc$value<-0.10 #0.05-0.15
 
-
 ###
 
 #old parameters set
 cumba_par$Tcold$value<-5
-cumba_par$FIntMax$value<-.92
+cumba_par$FIntMax$value<-.91
 cumba_par$TransplantingLag$value<-9
 cumba_par$InitialInt$value<-.001
 cumba_par$RootDepthInitial$value<-5
@@ -57,10 +111,8 @@ cumba_par$FruitWaterContentMin$value<-0.8
 
 
 # Define parameters in calibration
-pars <- c("KcMax",
-"FruitWaterContentMax", "RootDepthMax","FloweringLag", "CycleLength",
-"FruitWaterContentDecreaseMax",
-"FIntMax","RootIncrease","FloweringMax","FruitWaterContentInc","RUE")
+pars <- c("FloweringLag", "FruitWaterContentDecreaseMax","RUE", 
+          "FruitWaterContentMin","WaterStressSensitivity")
 
 
 # Extract lower and upper bounds
@@ -70,32 +122,25 @@ upperPar <- vapply(pars, function(p) cumba_par[[p]]$max, numeric(1))
 lowerPar <- unname(lowerPar)
 upperPar <- unname(upperPar)
 
-soil<-read_excel("Dataset Carucci et al. new.xlsx", sheet="Soil")
+soil<-read_excel(paste0(inputDir,"\\Dataset Carucci et al. new.xlsx"), sheet="Soil")
 experiments<- unique(soil$ID)
 
 
 
-lowerPar<-c(.8, .80,60, 15, 1000,.0005,0.85,.5,35,.05,2)
-upperPar<-c(1.15,0.98,100,50,1600,0.005,0.95,1.5,65,.15,3.5)
-
-
+lowerPar<-c(28,.001,2.5,55,.75,4)
+upperPar<-c(35,0.002,3.5,85,.85,9)
 
 # --- Define Genetic Algorithm Loss Function ---
 lossFunctionGA <- function(params, weather) {
   
   # Assign parameter values to model
-  cumba_par$KcMax$value<-params[1]
-  cumba_par$FruitWaterContentMax$value<-params[2]
-  cumba_par$RootDepthMax$value<-params[3]
-  cumba_par$FloweringLag$value<-params[4]
-  cumba_par$CycleLength$value<-params[5]  
-  cumba_par$FruitWaterContentDecreaseMax$value<-params[6]
-  cumba_par$FIntMax$value<-params[7]
-  cumba_par$RootIncrease$value<-params[8]
-  cumba_par$FloweringMax$value<-params[9]
-  cumba_par$FruitWaterContentInc$value<-params[10]
-  cumba_par$RUE$value<-params[11]
-
+  cumba_par$FloweringLag$value<-params[1]
+  cumba_par$FruitWaterContentDecreaseMax$value<-params[2]
+  cumba_par$RUE$value<-params[3]
+  cumba_par$DepletionFraction$value<-params[4]
+  cumba_par$FruitWaterContentMin$value<-params[5]
+  cumba_par$WaterStressSensitivity$value<-params[6]
+  
   # Run crop simulation
   results <- list()
   iexp<-experiments[[1]]
@@ -145,8 +190,8 @@ lossFunctionGA <- function(params, weather) {
   r_brix <- cor(out_calib$brix, out_calib$brix_ref, method = "pearson")
   
   # Objective function to minimize
-  objFun_yield <- (nrmse_yield * 0.5) + ((1 - r_yield) * 0.5)
-  objFun_brix <- (nrmse_brix * 0.5) + ((1 - r_brix) * 0.5)
+  objFun_yield <- (nrmse_yield * 0.2) + ((1 - r_yield) * 0.8)
+  objFun_brix <- (nrmse_brix * 0.2) + ((1 - r_brix) * 0.8)
   
   if(!is.na(objFun_brix))
   {
@@ -169,6 +214,7 @@ ga_result <- ga(
   fitness = function(params) -lossFunctionGA(params, exp_data$weather),
   lower = lowerPar,
   upper = upperPar,
+  maxiter=50,
   optimArgs = list(method = "L-BFGS-B")
 )
 
@@ -180,41 +226,36 @@ results_list <- list(
 )
 
 # Save results to file
-saveRDS(results_list, file = "ga_result_04_25_26.rds")
+saveRDS(results_list, file = paste0(inputDir,"\\ga_result_04_25_26.rds"))
 
 # --- Run Simulation with Optimized Parameters ---
 
-paramCalibrated <- readRDS("ga_result_04_03_26.rds")
+paramCalibrated <- readRDS(paste0(inputDir,"\\ga_result_04_25_26.rds"))
 #[[1]]
 
 # Update model parameters
- cumba_par$RUE$value<-paramCalibrated$best_params[1]
- cumba_par$HalfIntGrowth$value<-paramCalibrated$best_params[2]
- cumba_par$HalfIntSenescence$value<-paramCalibrated$best_params[3]
-cumba_par$KcMax$value<-paramCalibrated$best_params[4]
-cumba_par$FruitWaterContentMax$value<-paramCalibrated$best_params[5]
-cumba_par$RootDepthMax$value<-paramCalibrated$best_params[6]
-cumba_par$FloweringLag$value<-paramCalibrated$best_params[7]
-cumba_par$CycleLength$value<-paramCalibrated$best_params[8]  
-cumba_par$WaterStressSensitivity$value<-paramCalibrated$best_params[9]
-cumba_par$RootIncrease$value<-paramCalibrated$best_params[10]
- cumba_par$Topt$value<-paramCalibrated$best_params[11]
- cumba_par$k0$value<-paramCalibrated$best_params[12]
-cumba_par$FruitWaterContentDecreaseMax$value<-paramCalibrated$best_params[13]
-cumba_par$FruitWaterContentInc$value<-paramCalibrated$best_params[14]
 
-
-
-
-
+cumba_par$KcMax$value<-1.15#paramCalibrated$best_params[1]
+cumba_par$FruitWaterContentMax$value<-paramCalibrated$best_params[2]
+cumba_par$RootDepthMax$value<-paramCalibrated$best_params[3]
+cumba_par$FloweringLag$value<-paramCalibrated$best_params[4]
+cumba_par$CycleLength$value<-paramCalibrated$best_params[5]  
+cumba_par$FruitWaterContentDecreaseMax$value<-paramCalibrated$best_params[6]
+cumba_par$FIntMax$value<-paramCalibrated$best_params[7]
+cumba_par$RootIncrease$value<-paramCalibrated$best_params[8]
+cumba_par$FloweringMax$value<-paramCalibrated$best_params[9]
+cumba_par$FruitWaterContentInc$value<-paramCalibrated$best_params[10]
+cumba_par$RUE$value<-paramCalibrated$best_params[11]
+cumba_par$HalfIntSenescence$value<-paramCalibrated$best_params[12]
+cumba_par$k0$value<-paramCalibrated$best_params[13]
 
 # Perform final simulation
-soil<-read_excel("Dataset Carucci et al. new.xlsx", sheet="Soil")
 experiments<- unique(soil$ID)
 
-
-
-source('..//R//Main.R')
+# Nota: NON serve rifare source('R/Main.R') qui — devtools::load_all()
+# all'inizio dello script ha gia' caricato la versione corrente.
+# Se hai modificato Main.R dopo l'inizio, basta rilanciare lo script da capo.
+devtools::load_all(pkg_root, quiet = TRUE)
 
 results <- list()
  iexp<-experiments[[1]]
@@ -242,11 +283,6 @@ thisYear<- exp_data$irrigation %>%
   )
 }
 
-# optimizedSimulation <- cumba_experiment(exp_data$weather, cumba_par,
-#                                         estimateRad = TRUE, estimateET0 = TRUE,
-#                                         exp_data$irrigation,
-#                                         fullOut = T)
-
  optimizedSimulation<-do.call(rbind, results)
 
  # Analyze and visualize correlation
@@ -268,15 +304,23 @@ scatterYield <- out_calib |>
   geom_smooth(method = "lm", formula = y ~ x)
 scatterYield
 
+library(ggplot2)
 
-lmBrix<- lm(brixAct ~ brix_ref, data = out_calib)
-summary(lmBrix)
+lmBrix <- lm(brixAct ~ brix_ref, data = out_calib)
+r2 <- summary(lmBrix)$r.squared
 
-# Scatter plot with regression
 scatterBrix <- out_calib |>
   ggplot(aes(x = brix_ref, y = brixAct)) +
   geom_point() +
-  geom_smooth(method = "lm", formula = y ~ x)
+  geom_smooth(method = "lm", formula = y ~ x) +
+  annotate(
+    "text",
+    x = Inf, y = -Inf,
+    label = paste0("R² = ", round(r2, 3)),
+    hjust = 1.1, vjust = -0.5,
+    size = 5
+  )
+
 scatterBrix
 
 
@@ -303,30 +347,31 @@ optimizedSimulation <- optimizedSimulation %>%
 ggplot(optimizedSimulation, aes(x = daysAfterSowing)) +
   #geom_line(aes(x = doy, y = cycleCompletion*8), color = "tomato3", alpha = 1, size = 1) +
   #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
-  geom_line(aes(x = doy, y = fIntAct*100), color = "tomato3", alpha = 1, size = 1) +
+  #  geom_line(aes(x = doy, y = fIntAct*100), color = "tomato3", alpha = 1, size = 1) +
+  #geom_line(aes(x = doy, y = et0), color = "pink4", alpha = 1, size = 1) +
   #geom_line(aes(x = doy, y = fIntPot), color = "blue", alpha = 1, size = 1) +
- #   #geom_line(aes(x = doy, y = fruitsStateAct), color = "tomato3", alpha = 1, size = 1) +
- #   #geom_line(aes(x = doy, y = fruitFreshWeightAct*0.01), color = "tomato3", alpha = 1, size = 2) +
-   geom_line(aes(x = doy, y = waterStress*100), color = "blue", alpha = 1, size = .5) +
+  #geom_line(aes(x = doy, y = fruitsStateAct), color = "tomato3", alpha = 1, size = 1) +
+    geom_line(aes(x = doy, y = fruitFreshWeightAct*0.01), color = "black", alpha = 1, size = 1) +
+   # geom_line(aes(x = doy, y = waterStress*100), color = "blue", alpha = 1, size = .5) +
  # # geom_line(aes(x = doy, y = floweringStateAct*100), color = "black", alpha = 1, size = 2) +
-  geom_line(aes(x = doy, y = brixAct*10), color = "black", alpha = 1, size = .5) +
- # geom_line(aes(x = doy, y = fruitWaterContentAct*100), color = "tomato", alpha = 1, size = .5) +
-  geom_line(aes(x = doy, y = kc*100), color = "red", alpha = 1, size = 1) +
-   # stat_summary(
-   #  aes(x = doy, y = yield_ref),
-   #   fun.data = mean_sdl,
-   #   fun.args = list(mult = 1),
-   #   geom = "pointrange",
-   #   color = "tomato4",
-   #   alpha = 0.5,
-   #   size = 0.7
-   # ) +
+    geom_line(aes(x = doy, y = brixAct*10), color = "black", alpha = 1, size = .5) +
+  # geom_line(aes(x = doy, y = fruitWaterContentAct*100), color = "tomato", alpha = 1, size = .5) +
+  # geom_line(aes(x = doy, y = kc*100), color = "red", alpha = 1, size = 1) +
+  stat_summary(
+   aes(x = doy, y = yield_ref),
+    fun.data = mean_sdl,
+    fun.args = list(mult = 1),
+    geom = "pointrange",
+    color = "black",
+    alpha = 0.5,
+    size = 0.7
+  ) +
 stat_summary(
   aes(x = doy, y = brix_ref*10),
   fun.data = mean_sdl,
   fun.args = list(mult = 1),
   geom = "pointrange",
-  color = "tomato4",
+  color = "tomato",
   alpha = 0.5,
   size = 0.2
 ) +

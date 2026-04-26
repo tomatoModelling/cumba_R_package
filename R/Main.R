@@ -224,7 +224,7 @@ cumba_experiment <- function(weather,
   x<-seq(0:100)
   floweringPotentialFunction<-sapply(x, floweringDynamics, floweringSlope=floweringSlope,       floweringLag=floweringLag, floweringMax=floweringMax)
   floweringPotentialSum<-sum(floweringPotentialFunction)
-  #browser()
+  
   #Define the output vector with column names for the results dataframe ----
     outputNames<-c('site','year','experiment', 'doy','tMax','tMin','p','irrigation',
                 'gddRate','gddState','phenoCode','phenoStage','rootRate','rootState','ftsw',
@@ -319,10 +319,10 @@ cumba_experiment <- function(weather,
         wc2_y<-wc1_y
         kcMaxAct<-0
         cycleFIntMax<-0
-        
-        # Current year being processed 
+
+        # Current year being processed
         thisYear <- years[year][[1]]
-        
+
         # Subset the weather data for the current year
         dfYear <- dfSite[dfSite$year == thisYear, ]
 
@@ -378,12 +378,6 @@ cumba_experiment <- function(weather,
           }else{
             et0 <- et0_vec[day]                  #ET0, mm d-1
           }
-
-          # Cache delle chiavi del dizionario `outputs` per il giorno corrente/precedente
-          # (era ricalcolato come.character(doy-1) ~15 volte/giorno)
-          doy_chr   <- as.character(doy)
-          doy_y_chr <- as.character(doy - 1L)
-          prev      <- outputs[[doy_y_chr]]    # NULL il primo giorno
           
           #compute gdd
           gdd<-gdd_compute(tAve,tBase,tOpt,tMax) #Growing degree day
@@ -393,10 +387,10 @@ cumba_experiment <- function(weather,
   
           
           #fix cycle completion at 100 if exceeds
-          # if(cycleCompletion>=100)
-          # {
-          #   cycleCompletion = 100
-          # }
+          if(cycleCompletion>=100)
+          {
+            cycleCompletion = 100
+          }
           
           
           ## Compute root depth (cm)----     
@@ -422,22 +416,26 @@ cumba_experiment <- function(weather,
           fIntPot<-fIntCompute(fIntMax,cycleLength,transplantingLag,halfIntGrowth,
                                halfIntSenescence,initialInt,gddState)
           
-          if(length(outputs)>0 & phenoCode>=1){ 
-            fIntPotRate <- fIntPot-prev[['fIntPot']]
-            fIntActRate <- fIntPotRate*prev[['waterStress']]
-            
+          prevDoy <- doy - 1L
+          prevOut <- if (prevDoy >= 1L && prevDoy <= length(outputs)) outputs[[prevDoy]] else NULL
+          hasPrev <- !is.null(prevOut)
+
+          if(hasPrev & phenoCode>=1){
+            fIntPotRate <- fIntPot - prevOut[['fIntPot']]
+            fIntActRate <- fIntPotRate * prevOut[['waterStress']]
+
             fIntModifier<-0
             if(fIntPotRate>0){
-              fIntModifier<-fIntPotRate*prev[['waterStress']]
+              fIntModifier <- fIntPotRate * prevOut[['waterStress']]
             }
             else
             {
-              fIntModifier<-fIntPotRate*(1+(1-prev[['waterStress']]))
+              fIntModifier <- fIntPotRate * (1+(1-prevOut[['waterStress']]))
             }
-            
-            fIntAct<-prev[['fIntAct']] + fIntModifier
-            
-            
+
+            fIntAct <- prevOut[['fIntAct']] + fIntModifier
+
+
             if(fIntAct<0)
             {
               fIntAct<-0
@@ -451,21 +449,20 @@ cumba_experiment <- function(weather,
             fIntActRate = fIntPot
             fIntAct = fIntPot
           }
-          
+
           ## Compute crop coefficient (Kc) and real ET ----
-            fIntY<-0
-          if(length(outputs)>0) {
-            fIntY<-prev[['fIntAct']]
+          fIntY<-0
+          if(hasPrev) {
+            fIntY<-prevOut[['fIntAct']]
           }
-    if (fIntAct<fIntY & kcMaxAct==0) {
-      kcMaxAct=prev[['kc']]
-      cycleFIntMax=prev[['fIntAct']]
-    }
-          
+          if (fIntAct<fIntY & kcMaxAct==0) {
+            kcMaxAct=prevOut[['kc']]
+            cycleFIntMax=prevOut[['fIntAct']]
+          }
+
           kc<- kcCompute(fIntAct,kcIni, kcMax,kcMaxAct,cycleFIntMax, cycleCompletion)
           etR<-etRCompute(et0, kc)
-    
-          
+
           ## Compute soil water content at 1 layer (3cm)----
           #1. Reinitialize days no rain
           if(p+irrigation<=3)
@@ -475,13 +472,13 @@ cumba_experiment <- function(weather,
           {
             daysNoRain<-0
           }
-          
-          
+
+
           #ftsw calculation
-          if(length(outputs)>0)
+          if(hasPrev)
           {
-            wc1_y <- prev[['wc1']]
-            wc2_y <- prev[['wc2']]
+            wc1_y <- prevOut[['wc1']]
+            wc2_y <- prevOut[['wc2']]
           }
           
           if (rootState>3){
@@ -536,55 +533,45 @@ cumba_experiment <- function(weather,
           if(cycleCompletion>=floweringLag){
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
-            floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
-                                    prev[['floweringStateIde']]) 
+            floweringStateIde <- (floweringRateIde/floweringPotentialSum +
+                                    prevOut[['floweringStateIde']])
             floweringRateAct <-floweringRateIde*(1-hs)*(1-cs)
-            floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
-                                     prev[['floweringStateAct']])  
+            floweringStateAct <-  (floweringRateAct/floweringPotentialSum +
+                                     prevOut[['floweringStateAct']])
           }else{
             floweringRateIde<-0
             floweringStateIde<-0
             floweringRateAct<-0
             floweringStateAct<-0
           }
-          
+
           fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
-          if(phenoCode==3) {
-            startFruitDecrease<-floweringLag+(100-floweringLag)/2
-            test<-(cycleCompletion- startFruitDecrease)/(100- startFruitDecrease)
-            fruitSetCoefficient=fruitSetCoefficient-test
-          }
-          if(fruitSetCoefficient<0) {
-            fruitSetCoefficient=0
-          } 
-            
+
           ### reinitialize states----
           fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
-          
+
           ### check the phenological stage (only after flowering)----
-          if(cycleCompletion>=floweringLag &
-             cycleCompletion<100){
-           #browser()
-             fruitsRateIde <- carbonRateIde
+          if(cycleCompletion>=floweringLag){
+            fruitsRateIde <- carbonRateIde
             fruitsRatePot<-carbonRatePot * fruitSetCoefficient
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
-          
-          
+
+
           ## Compute BRIX ----
-          
+
           ### check if it is the first day----
-          if(length(outputs)>0) #
+          if(hasPrev)
           {
-            fruitsStateIde<-fruitsRateIde+ prev[['fruitsStateIde']]
-            fruitsStatePot<-fruitsRatePot+ prev[['fruitsStatePot']]
-            fruitsStateAct<-fruitsRateAct+ prev[['fruitsStateAct']]
+            fruitsStateIde <- fruitsRateIde + prevOut[['fruitsStateIde']]
+            fruitsStatePot <- fruitsRatePot + prevOut[['fruitsStatePot']]
+            fruitsStateAct <- fruitsRateAct + prevOut[['fruitsStateAct']]
             #for BRIX
-            carbonSugarState_1<-prev[['carbonSugarState']]
-            fruitWaterContentPot_y<-prev[['fruitWaterContentPot']]
-            fruitWaterContentAct_y<-prev[['fruitWaterContentAct']]
+            carbonSugarState_1     <- prevOut[['carbonSugarState']]
+            fruitWaterContentPot_y <- prevOut[['fruitWaterContentPot']]
+            fruitWaterContentAct_y <- prevOut[['fruitWaterContentAct']]
           }
           else
           {
@@ -593,7 +580,7 @@ cumba_experiment <- function(weather,
             fruitWaterContentPot_y<-NA
             fruitWaterContentAct_y<-NA
           }
-          
+
           Brix <- BRIX_model(k0,fruitsRateAct,fruitsStateAct,
                              Lat,doy,carbonSugarState_1,
                              gammaCarbon,gammaSugar,
@@ -615,20 +602,19 @@ cumba_experiment <- function(weather,
           fruitFreshWeightAct<-Brix[[9]]
           brixPot<-Brix[[10]]
           brixAct<-Brix[[11]]
-          
-          
+
           ## Populate output variables----
-            outputs[[doy_chr]]<-setNames(list(
+            outputs[[doy]] <- setNames(list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
               gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
-              trc1, ev1, dc1, wc1mm, daysNoRain, 
-              trc2, dc2, wc2mm, 
+              trc1, ev1, dc1, wc1mm, daysNoRain,
+              trc2, dc2, wc2mm,
               dc3, wc3mm,
-              wc1, wc2, wc3, 
+              wc1, wc2, wc3,
               ws, # Assuming ws maps to 'waterStress',
-              hs, cs, fIntPot, fIntAct, 
+              hs, cs, fIntPot, fIntAct,
               kc, et0, etR, radSim,
-              carbonRateIde,carbonStateIde,carbonRatePot, 
+              carbonRateIde,carbonStateIde,carbonRatePot,
               carbonStatePot, carbonRateAct, carbonStateAct,
               floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct,
               cycleCompletion,
@@ -637,14 +623,39 @@ cumba_experiment <- function(weather,
               fruitWaterContentPot,fruitWaterContentPotRate,
               fruitWaterContentSensitivity,fruitWaterContentAct,
               fruitFreshWeightPot,fruitFreshWeightAct,
-              brixPot,brixAct), 
+              brixPot,brixAct),
               outputNames)
 
         }
-        ## Store the result in the outputs list ----     
-        tempOutputs<-as.data.frame(t((matrix(unlist(outputs), 
-                                             nrow=length(unlist(outputs[1]))))))
-        names(tempOutputs) <- outputNames # Rename columns
+        ## Store the result in the outputs list ----
+        # Drop NULL slots created when doy starts > 1 (integer indexing)
+        outputs <- outputs[lengths(outputs) > 0L]
+        # Build the per-experiment data frame column-by-column so that numeric
+        # columns stay numeric (no character round-trip).  Positions 1 and 12
+        # are site and phenoStage (character), everything else is numeric.
+        if (length(outputs) > 0L) {
+          nCols <- length(outputs[[1L]])
+          charCols <- c(1L, 12L)
+          col_list <- vector("list", nCols)
+          for (j in seq_len(nCols)) {
+            if (j %in% charCols) {
+              col_list[[j]] <- vapply(outputs, function(x) as.character(x[[j]]),
+                                      character(1L))
+            } else {
+              col_list[[j]] <- vapply(outputs, function(x) {
+                v <- x[[j]]
+                if (is.null(v) || length(v) != 1L) NA_real_ else as.numeric(v)
+              }, numeric(1L))
+            }
+          }
+          names(col_list) <- outputNames
+          tempOutputs <- as.data.frame(col_list, stringsAsFactors = FALSE)
+        } else {
+          tempOutputs <- as.data.frame(
+            matrix(NA_real_, nrow = 0L, ncol = length(outputNames))
+          )
+          names(tempOutputs) <- outputNames
+        }
         outputsExperiment[[as.character(thisId)]]<-tempOutputs
       }
       
@@ -676,8 +687,11 @@ cumba_experiment <- function(weather,
   # Specify the columns to convert (all columns except the first and the 12th)
   colsToConvert <- setdiff(names(dfOut), names(dfOut)[c(1, 12)])
   
-  # Convert specified columns to numeric using lapply and handle NA coercion
-  dfOut[colsToConvert] <- lapply(dfOut[colsToConvert], function(x) as.numeric(as.character(x)))
+  # Convert specified columns to numeric using lapply and handle NA coercion.
+  # Skip the character round-trip when the column is already numeric.
+  dfOut[colsToConvert] <- lapply(dfOut[colsToConvert], function(x) {
+    if (is.numeric(x)) x else as.numeric(as.character(x))
+  })
   
   ## Print the execution time ---- 
   endTime <- Sys.time()
@@ -744,14 +758,10 @@ cumba_scenario <- function(weather, param,
                            estimateRad = TRUE, 
                            estimateET0 = TRUE,
                            transplantingDOY = 120,
-                           waterStressLevel = list(
-                             vegetative = 0.5,
-                             reproductive = 0.5,
-                             ripening = 0.5), 
-                           minimumTurn = list(
-                             vegetative = 4,
-                             reproductive = 4,
-                             ripening = 4),
+                           irrigationStrategy = list(
+                             vegetative = list(wsLevel = 0.5, turnMin = 2),
+                             reproductive = list(wsLevel = 0.5, turnMin = 2),
+                             ripening = list(wsLevel = 0.5, turnMin = 2)),
                            fullOut = FALSE)
 {
   # convert param list
@@ -759,9 +769,7 @@ cumba_scenario <- function(weather, param,
     param <- tibble::as_tibble(lapply(param, function(p) p$value))
   }
   
-  cat(crayon::blue(paste("CUMBA running in deficit irrigation mode, with water stress level = ",
-                           waterStressLevel, " and minimum turn equal to", 
-                       minimumTurn, " days!\n")))
+  cat(crayon::blue(paste("CUMBA running in deficit irrigation mode\n")))
   
   
   # Check if required columns exist in weather data frame
@@ -983,18 +991,16 @@ cumba_scenario <- function(weather, param,
           doy  <- doy_vec[day]                 #Day of the year
           # Current date being processed
           date <- date_vec[day]
-          # Cache delle chiavi del dizionario `outputs` (logica invariata)
-          doy_chr   <- as.character(doy)
-          doy_y_chr <- as.character(doy - 1L)
-          prev      <- outputs[[doy_y_chr]]    # NULL il primo giorno
           #150 days is the maximum duration of the tomato cycle (5 months)
           if(doy>=transplantingDOY && doy <= transplantingDOY+150)
           {
-            if(length(outputs)==0){
+            prevDoyPC <- doy - 1L
+            prevPC <- if (prevDoyPC >= 1L && prevDoyPC <= length(outputs)) outputs[[prevDoyPC]] else NULL
+            if(is.null(prevPC)){
               phenoCode = 0
             }
             else{
-              phenoCode = prev[['phenoCode']]
+              phenoCode = prevPC[['phenoCode']]
             }
             
             if(phenoCode == 0)
@@ -1004,18 +1010,18 @@ cumba_scenario <- function(weather, param,
             }
             if (phenoCode == 1)
             {
-              minimumTurnSim = minimumTurn$vegetative
-              waterStressLevelSim = waterStressLevel$vegetative
+              minimumTurnSim = irrigationStrategy$vegetative$turnMin
+              waterStressLevelSim = irrigationStrategy$vegetative$wsLevel
             }
             else if (phenoCode == 2)
             {
-              minimumTurnSim = minimumTurn$reproductive
-              waterStressLevelSim = waterStressLevel$reproductive
+              minimumTurnSim = irrigationStrategy$reproductive$turnMin
+              waterStressLevelSim = irrigationStrategy$reproductive$wsLevel
             }
             else if (phenoCode ==3)
             {
-              minimumTurnSim = minimumTurn$ripening
-              waterStressLevelSim = waterStressLevel$ripening
+              minimumTurnSim = irrigationStrategy$ripening$turnMin
+              waterStressLevelSim = irrigationStrategy$ripening$wsLevel
             }
             
             #run in scenario mode --> trigger irrigation based on conditions
@@ -1095,21 +1101,25 @@ cumba_scenario <- function(weather, param,
           fIntPot<-fIntCompute(fIntMax,cycleLength,transplantingLag,halfIntGrowth,
                                halfIntSenescence,initialInt,gddState)
           
-          if(length(outputs)>0 & phenoCode>=1){ 
-            fIntPotRate <- fIntPot-prev[['fIntPot']]
-            fIntActRate <- fIntPotRate*prev[['waterStress']]
-            
+          prevDoy <- doy - 1L
+          prevOut <- if (prevDoy >= 1L && prevDoy <= length(outputs)) outputs[[prevDoy]] else NULL
+          hasPrev <- !is.null(prevOut)
+
+          if(hasPrev & phenoCode>=1){
+            fIntPotRate <- fIntPot - prevOut[['fIntPot']]
+            fIntActRate <- fIntPotRate * prevOut[['waterStress']]
+
             fIntModifier<-0
             if(fIntPotRate>0){
-              fIntModifier<-fIntPotRate*prev[['waterStress']]
+              fIntModifier <- fIntPotRate * prevOut[['waterStress']]
             }
             else
             {
-              fIntModifier<-fIntPotRate*(1+(1-prev[['waterStress']]))
+              fIntModifier <- fIntPotRate * (1+(1-prevOut[['waterStress']]))
             }
-            
-            fIntAct<-prev[['fIntAct']] + fIntModifier
-            
+
+            fIntAct <- prevOut[['fIntAct']] + fIntModifier
+
             if(fIntAct<0){
               fIntAct=0
             }
@@ -1124,17 +1134,17 @@ cumba_scenario <- function(weather, param,
           
           ## Compute crop coefficient (Kc) and real ET ----
           fIntY<-0
-          if(length(outputs)>0) {
-            fIntY<-prev[['fIntAct']]
+          if(hasPrev) {
+            fIntY<-prevOut[['fIntAct']]
           }
           if (fIntAct<fIntY & kcMaxAct==0) {
-            kcMaxAct=prev[['kc']]
-            cycleFIntMax=prev[['fIntAct']]
+            kcMaxAct=prevOut[['kc']]
+            cycleFIntMax=prevOut[['fIntAct']]
           }
 
           kc<- kcCompute(fIntAct,kcIni, kcMax,kcMaxAct,cycleFIntMax, cycleCompletion)
           etR<-etRCompute(et0, kc)
-          
+
           ## Compute soil water content at 1 layer (3cm)----
           #1. Reinitialize days no rain
           if(p+irrigation<=3)
@@ -1147,12 +1157,12 @@ cumba_scenario <- function(weather, param,
           
           
           #ftsw calculation
-          if(length(outputs)>0)
+          if(hasPrev)
           {
-            wc1_y <- prev[['wc1']]
-            wc2_y <- prev[['wc2']]
+            wc1_y <- prevOut[['wc1']]
+            wc2_y <- prevOut[['wc2']]
           }
-          
+
           if (rootState>3){
             wsAve = (wc1_y*3 + wc2_y * (rootState-3))/(rootState)
           }else
@@ -1213,25 +1223,25 @@ cumba_scenario <- function(weather, param,
           if(cycleCompletion>=floweringLag){
             floweringRateIde<-floweringDynamics(cycleCompletion,floweringLag,
                                                 floweringSlope,floweringMax)
-            floweringStateIde <- (floweringRateIde/floweringPotentialSum + 
-                                    prev[['floweringStateIde']]) 
+            floweringStateIde <- (floweringRateIde/floweringPotentialSum +
+                                    prevOut[['floweringStateIde']])
             floweringRateAct <-floweringRateIde*(1-hs)*(1-cs)
-            floweringStateAct <-  (floweringRateAct/floweringPotentialSum +  
-                                     prev[['floweringStateAct']])  
+            floweringStateAct <-  (floweringRateAct/floweringPotentialSum +
+                                     prevOut[['floweringStateAct']])
           }else{
             floweringRateIde<-0
             floweringStateIde<-0
             floweringRateAct<-0
             floweringStateAct<-0
           }
-          
+
           fruitSetCoefficient <- 1-(floweringStateIde-floweringStateAct)
-          
+
           ### reinitialize states----
           fruitsRateIde<-0
           fruitsRatePot<-0
           fruitsRateAct<-0
-          
+
           ### check the phenological stage (only after flowering)----
           if(cycleCompletion>=floweringLag){
             fruitsRateIde <- carbonRateIde
@@ -1239,17 +1249,17 @@ cumba_scenario <- function(weather, param,
             fruitsRateAct<-carbonRateAct * fruitSetCoefficient
           }
           ## Compute BRIX ----
-          
+
           ### check if it is the first day----
-          if(length(outputs)>0) #
+          if(hasPrev)
           {
-            fruitsStateIde<-fruitsRateIde+ prev[['fruitsStateIde']]
-            fruitsStatePot<-fruitsRatePot+ prev[['fruitsStatePot']]
-            fruitsStateAct<-fruitsRateAct+ prev[['fruitsStateAct']]
+            fruitsStateIde <- fruitsRateIde + prevOut[['fruitsStateIde']]
+            fruitsStatePot <- fruitsRatePot + prevOut[['fruitsStatePot']]
+            fruitsStateAct <- fruitsRateAct + prevOut[['fruitsStateAct']]
             #for BRIX
-            carbonSugarState_1<-prev[['carbonSugarState']]
-            fruitWaterContentPot_y<-prev[['fruitWaterContentPot']]
-            fruitWaterContentAct_y<-prev[['fruitWaterContentAct']]
+            carbonSugarState_1     <- prevOut[['carbonSugarState']]
+            fruitWaterContentPot_y <- prevOut[['fruitWaterContentPot']]
+            fruitWaterContentAct_y <- prevOut[['fruitWaterContentAct']]
           }
           else
           {
@@ -1284,17 +1294,17 @@ cumba_scenario <- function(weather, param,
           
           
           ## Populate output variables----
-          outputs[[doy_chr]]<-setNames(list(
+          outputs[[doy]] <- setNames(list(
             thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,
             gddRate, gddState, phenoCode, phenoStage, rootRate, rootState, ftsw,
-            trc1, ev1, dc1, wc1mm, daysNoRain, 
-            trc2, dc2, wc2mm, 
+            trc1, ev1, dc1, wc1mm, daysNoRain,
+            trc2, dc2, wc2mm,
             dc3, wc3mm,
-            wc1, wc2, wc3, 
+            wc1, wc2, wc3,
             ws, # Assuming ws maps to 'waterStress',
-            hs, cs, fIntPot, fIntAct, 
+            hs, cs, fIntPot, fIntAct,
             kc, et0, etR, radSim,
-            carbonRateIde,carbonStateIde,carbonRatePot, 
+            carbonRateIde,carbonStateIde,carbonRatePot,
             carbonStatePot, carbonRateAct, carbonStateAct,
             floweringRateIde, floweringStateIde, floweringRateAct, floweringStateAct,
             cycleCompletion,
@@ -1303,14 +1313,38 @@ cumba_scenario <- function(weather, param,
             fruitWaterContentPot,fruitWaterContentPotRate,
             fruitWaterContentSensitivity,fruitWaterContentAct,
             fruitFreshWeightPot,fruitFreshWeightAct,
-            brixPot,brixAct), 
+            brixPot,brixAct),
             outputNames)
           }
         }
-        ## Store the result in the outputs list ----     
-        tempOutputs<-as.data.frame(t((matrix(unlist(outputs), 
-                                             nrow=length(unlist(outputs[1]))))))
-        names(tempOutputs) <- outputNames # Rename columns
+        ## Store the result in the outputs list ----
+        # Drop NULL slots (positions 1..transplantingDOY-1 of integer-indexed outputs)
+        outputs <- outputs[lengths(outputs) > 0L]
+        # Build the per-experiment data frame column-by-column so that numeric
+        # columns stay numeric.  Positions 1 and 12 are character (site, phenoStage).
+        if (length(outputs) > 0L) {
+          nCols <- length(outputs[[1L]])
+          charCols <- c(1L, 12L)
+          col_list <- vector("list", nCols)
+          for (j in seq_len(nCols)) {
+            if (j %in% charCols) {
+              col_list[[j]] <- vapply(outputs, function(x) as.character(x[[j]]),
+                                      character(1L))
+            } else {
+              col_list[[j]] <- vapply(outputs, function(x) {
+                v <- x[[j]]
+                if (is.null(v) || length(v) != 1L) NA_real_ else as.numeric(v)
+              }, numeric(1L))
+            }
+          }
+          names(col_list) <- outputNames
+          tempOutputs <- as.data.frame(col_list, stringsAsFactors = FALSE)
+        } else {
+          tempOutputs <- as.data.frame(
+            matrix(NA_real_, nrow = 0L, ncol = length(outputNames))
+          )
+          names(tempOutputs) <- outputNames
+        }
         outputsExperiment[[as.character(thisId)]]<-tempOutputs
         
         cat(crayon::green(paste("🍅 running experiment ", thisId, " in site ", 
@@ -1339,8 +1373,11 @@ cumba_scenario <- function(weather, param,
   # Specify the columns to convert (all columns except the first and the 12th)
   colsToConvert <- setdiff(names(dfOut), names(dfOut)[c(1, 12)])
   
-  # Convert specified columns to numeric using lapply and handle NA coercion
-  dfOut[colsToConvert] <- lapply(dfOut[colsToConvert], function(x) as.numeric(as.character(x)))
+  # Convert specified columns to numeric using lapply and handle NA coercion.
+  # Skip the character round-trip when the column is already numeric.
+  dfOut[colsToConvert] <- lapply(dfOut[colsToConvert], function(x) {
+    if (is.numeric(x)) x else as.numeric(as.character(x))
+  })
   
   ## Print the execution time ---- 
   endTime <- Sys.time()
@@ -1394,19 +1431,19 @@ coldStressLinear<-function(tN,tBase,tCold)
         # kc (https://pismin.com/10.1007/s00271-011-0312-2) ----
 #' @keywords internal         
 kcCompute<-function(fInt,kcIni,kcMax,kcMaxAct, cycleFIntMax,cyclePerc)
-{ 
+{
   if (kcMaxAct==0) {
     kc<- kcIni + (kcMax - kcIni) * fInt
   }
   else {
   kcFinal<- (kcIni+kcMaxAct)*0.5
-  cyclePercSen<- (cycleFIntMax-fInt)/(cycleFIntMax-.5*cycleFIntMax)
+  cyclePercSen<- (cycleFIntMax-fInt )/(cycleFIntMax-.5)
      kc<- kcFinal+(kcMaxAct-kcFinal) *(1- cyclePercSen)
   }
   return(kc)
 }
         # Real evapotranspiration ----
-#' @keywords internal         
+#' @keywords internal
 etRCompute<-function(et0,kc)
 {
   etR<-et0*kc
@@ -1443,7 +1480,7 @@ phenoPhases<-function(gddState,cycleLength,transplantingLag,floweringLag)
   {
     phenoCode<-1
     phenoStage<-'vegetative'
-  }else if (gddState < (cycleLength*floweringLag/100) + (((100-floweringLag)/2)/100) *cycleLength)
+  }else if (gddState < cycleLength*(100-floweringLag)/100)
   {
     phenoCode<-2
     phenoStage<-'reproductive'
@@ -1519,13 +1556,14 @@ soilWaterModel <- function(doy,outputs, ftsw, depletionFraction,irrigation,p,roo
                            wiltingPoint,soilWaterInitial, waterStressSensitivity)
 {
   #2. Compute water stress factor from water stress of previous day
-  if(length(outputs)>0) #check if it is the first day
+  prevDoyIdx <- doy - 1L
+  prevSwc <- if (prevDoyIdx >= 1L && prevDoyIdx <= length(outputs)) outputs[[prevDoyIdx]] else NULL
+  if(!is.null(prevSwc)) #check if it is the first day
   {
-    prev   <- outputs[[as.character(doy - 1L)]]
-    wc1mm  <- prev[['wc1mm']]
-    wc2mm  <- prev[['wc2mm']]
-    wc3mm  <- prev[['wc3mm']]
-    # ftsw <- prev[['waterStress']]
+    wc1mm <- prevSwc[['wc1mm']]
+    wc2mm <- prevSwc[['wc2mm']]
+    wc3mm <- prevSwc[['wc3mm']]
+    # ftsw <- prevSwc[['waterStress']]
   }
   else
   {
@@ -1958,9 +1996,9 @@ fruitWaterContent<-function(fruitWaterContentMin,fruitWaterContentMax,
   fruitWaterRatePot <- fruitWaterStatePot - fruitWaterContentPot_y
   
   #percentage ripening completion
-  ripeningCompletion <- (cycleCompletion-floweringLag) / (100-floweringLag)*100
+  ripeningCompletion <- ((cycleCompletion-floweringLag) / (100-floweringLag))*100
   #sensitivity to water stress
-  fruitSensitivityWS <- 1/(1+exp(-.1*(ripeningCompletion-50)))
+  fruitSensitivityWS <- 1/(1+exp(.12*(ripeningCompletion-60)))
   #actual fruit water content rate
   fruitWaterRateAct <- fruitWaterRatePot-fruitWaterContentDecreaseMax*
                                             (fruitSensitivityWS*(1-waterStress))

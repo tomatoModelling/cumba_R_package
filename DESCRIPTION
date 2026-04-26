@@ -3,9 +3,11 @@ Type: Package
 Title: Carbon Use Model for Yield and Brix Assessment in Processing Tomato
 Version: 0.0.1.0
 Authors@R: c(
+    person("Federica", "Carucci",
+           role = "aut"),
     person("Simone", "Bregaglio",
            email = "simone.bregaglio@gmail.com",
-           role  = c("aut", "cre")))
+           role = c("aut", "cre")))
 Description: A daily time-step crop model for processing tomato that simulates
     thermal time, phenology, root growth, a three-layer soil-water balance,
     carbon accumulation modulated by heat, cold and water stress, and predicts

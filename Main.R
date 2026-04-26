@@ -593,7 +593,7 @@ cumba_experiment <- function(weather,
           brixPot<-Brix[[10]]
           brixAct<-Brix[[11]]
           
-          
+          brixAct<-0
           ## Populate output variables----
             outputs[[as.character(doy)]]<-setNames(list(
               thisSite, thisYear, thisId, doy, tX, tN, p, irrigation,

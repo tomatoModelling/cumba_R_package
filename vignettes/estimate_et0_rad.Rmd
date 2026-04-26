@@ -7,133 +7,137 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment  = "#>",
-  fig.width = 7, fig.height = 4,
-  message = FALSE, warning = FALSE,
-  eval    = FALSE
-)
-```
-
-# Goal
-
-This vignette demonstrates how to use **cumba** to assist tomato
-farmers in irrigation scheduling by calibrating and estimating
-**reference evapotranspiration (ET₀)** and **solar radiation (RAD)**
-from weather-station data.
-
-The workflow follows three progressive steps:
-
-- **Calibration** — estimate ET₀ and RAD with the Hargreaves-style
-  formulae embedded in `cumba_scenario()`/`cumba_experiment()` and
-  compare them with observed values from a sub-period.
-- **Parameter averaging** — derive robust mean coefficients across
-  calibration sites/periods.
-- **Validation** — apply the averaged parameters to independent
-  datasets and compare estimated vs observed ET₀ and RAD.
-
-We rely on open-access weather data (NASA POWER or local agromet
-stations) and simple crop metadata (sowing/harvest dates for tomato
-experiments).
-
-# Packages
-
-```{r libraries}
+```{r setup, message=FALSE, warning=FALSE}
 library(cumba)
 library(dplyr)
 library(ggplot2)
 library(lubridate)
+library(readr)
 ```
 
-# Data
+# Read observed weather data
+Use the shipped CSV containing observed radiation (Rg) and ET0.
 
-The package ships with a real-world weather dataset from Foggia
-(processing-tomato area, Apulia, Italy). It already contains daily
-`Tx`, `Tn`, `P`, `Rad` and the columns `Site` and `Lat` required by
-the model.
+```{r}
+csv_file <- system.file(
+  "testFiles",
+  "weather_foggia.csv",
+  package = "cumba"
+)
+weather <- read_csv("..//testFiles/weather_foggia.csv") |> 
+  mutate(MDATE = as.Date(MDATE,format = '%m/%d/%Y')) |> 
+  rename(P = RAIN, Tx = TMAX, Tn = TMIN,DATE = MDATE) |> 
+  mutate(Lat=41,Site = 'Foggia',
+         Rg = as.numeric(Rg),ET0=as.numeric(ET0))
 
-```{r data}
-data(tomatoFoggia)
-weather <- tomatoFoggia$weather
-str(weather)
+glimpse(weather)
 ```
 
-If you want to reproduce the calibration on your own data, a CSV with
-the same columns is shipped under `testFiles/weather_foggia.csv`.
+Expected columns:
 
-# Step 1 — Run the model with internal ET₀/Rad estimation
+- DATE
+- Tx
+- Tn
+- P
+- Rg
+- ET0
+- Site
+- Lat
 
-Set `estimateRad = TRUE` and `estimateET0 = TRUE` to have CUMBA
-compute radiation and ET₀ internally using temperature-based
-formulae:
+# Run CUMBA with internal estimators
+```{r}
 
-```{r run}
+weather_pkg <- 
 out <- cumba_scenario(
-  weather     = weather,
+  weather     = weather |> select(-c(Rg,ET0)),
   param       = cumbaParameters,
   estimateRad = TRUE,
   estimateET0 = TRUE,
   fullOut     = TRUE
 )
 
-out_sim <- out |>
-  dplyr::select(year, doy, et0, radiation)
-
-head(out_sim)
+sim <- out |>
+  select(year, doy, radiation, et0)
 ```
 
-# Step 2 — Compare simulated vs observed
-
-`tomatoFoggia$weather` provides observed daily radiation `Rad`
-(MJ m⁻² d⁻¹). Joining it with the simulated outputs gives the
-calibration scatter plots:
-
-```{r compare}
+# Join observed and simulated
+```{r}
 obs <- weather |>
-  mutate(year = year(DATE), doy = yday(DATE)) |>
-  select(year, doy, Rad)
+  mutate(
+    DATE = as.Date(DATE,format = '%m/%d/%Y'),
+    year = year(DATE),
+    doy  = yday(DATE)
+  ) |>
+  select(year, doy, Rg, ET0)
 
-cmp <- out_sim |>
+cmp <- sim |>
   inner_join(obs, by = c("year", "doy"))
+```
 
-ggplot(cmp, aes(radiation, Rad)) +
-  geom_point(alpha = 0.3) +
-  geom_abline(slope = 1, intercept = 0, linetype = 2) +
-  xlim(0, 35) + ylim(0, 35) +
-  labs(x = "Simulated radiation (MJ m-2 d-1)",
-       y = "Observed radiation (MJ m-2 d-1)",
-       title = "Hargreaves-based radiation vs. measured")
+# Radiation
+```{r}
+ggplot(cmp, aes(radiation, Rg)) +
+  geom_point(alpha=.35) +
+  geom_abline(slope=1, intercept=0, linetype=2) +
+  labs(
+    x = "Estimated radiation",
+    y = "Observed radiation",
+    title = "Estimated vs observed radiation"
+  ) +
+  theme_bw()
+```
 
+```{r}
 ggplot(cmp, aes(doy)) +
-  stat_summary(geom = "ribbon", aes(y = radiation), alpha = 0.4) +
-  stat_summary(geom = "ribbon", aes(y = Rad), fill = "grey50", alpha = 0.4) +
-  labs(x = "DOY", y = "Radiation (MJ m-2 d-1)",
-       title = "Seasonal pattern (simulated vs observed)")
+  geom_line(aes(y = radiation, colour = "estimated")) +
+  geom_line(aes(y = Rg, colour = "observed")) +
+  facet_wrap(~year) +
+  labs(
+    x = "DOY",
+    y = "MJ m-2 d-1",
+    colour = NULL,
+    title = "Seasonal radiation dynamics"
+  ) +
+  theme_bw()
 ```
 
-# Step 3 — Validation on an independent year
-
-Hold out one season and compare:
-
-```{r validate}
-cal_years <- sort(unique(cmp$year))
-val_year  <- tail(cal_years, 1)
-
-val <- cmp |> filter(year == val_year)
-
-ggplot(val, aes(doy)) +
-  geom_line(aes(y = radiation, colour = "simulated")) +
-  geom_line(aes(y = Rad,       colour = "observed"))  +
-  labs(x = "DOY", y = "Radiation (MJ m-2 d-1)",
-       title = paste("Validation - year", val_year),
-       colour = NULL)
+# ET0
+```{r}
+ggplot(cmp, aes(et0, ET0)) +
+  geom_point(alpha=.35) +
+  geom_abline(slope=1, intercept=0, linetype=2) +
+  labs(
+    x = "Estimated ET0",
+    y = "Observed ET0",
+    title = "Estimated vs observed ET0"
+  ) +
+  theme_bw()
 ```
 
-# Going further
+```{r}
+ggplot(cmp, aes(doy)) +
+  geom_line(aes(y = et0, colour = "estimated")) +
+  geom_line(aes(y = ET0, colour = "observed")) +
+  facet_wrap(~year) +
+  labs(
+    x = "DOY",
+    y = "mm d-1",
+    colour = NULL,
+    title = "Seasonal ET0 dynamics"
+  ) +
+  theme_bw()
+```
 
-If your weather station provides observed ET₀, set
-`estimateET0 = FALSE` and add an `ET0` column to `weather`. CUMBA will
-then use the observed values directly, isolating the radiation
-estimator from the ET₀ estimator during calibration.
+# Performance metrics
+```{r}
+cmp |>
+  summarise(
+    RMSE_rad = sqrt(mean((radiation - Rg)^2, na.rm = TRUE)),
+    Bias_rad = mean(radiation - Rg, na.rm = TRUE),
+    R2_rad   = cor(radiation, Rg, use = "complete.obs")^2,
+
+    RMSE_et0 = sqrt(mean((et0 - ET0)^2, na.rm = TRUE)),
+    Bias_et0 = mean(et0 - ET0, na.rm = TRUE),
+    R2_et0   = cor(et0, ET0, use = "complete.obs")^2
+  )
+```

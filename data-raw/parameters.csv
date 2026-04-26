@@ -20,13 +20,8 @@ RootDepthInitial,Initial root depth,cm,6,2,6
 SoilWaterInitial,Initial soil water content (100 = field capacity 0 = wilting point),% AWC,75,50,100
 FieldCapacity,Field Capacity,%,0.3,0.2,0.45
 WiltingPoint,Wilting Point,%,0.1,0.05,0.15
-<<<<<<< HEAD
-DepletionFraction,Average percentage of total available soil water that can be depleted from the root zone before moisture stress (reduction in ET) occurs,% AWC,40,20,60
-WaterStressSensitivity,Sensitivity to water stress (hybrid specific),unitless,3,6,10
-=======
 DepletionFraction,Average percentage of total available soil water that can be depleted from the root zone before moisture stress (reduction in ET) occurs,% AWC,30,30,60
 WaterStressSensitivity,Sensitivity to water stress (hybrid specific),unitless,4,10,6
->>>>>>> 681287b8ddeb94768d8dee26f0ee5b4e08f2ae2e
 FloweringSlope,Slope of the flowering curve,unitless,0.4,0.25,0.5
 FloweringMax,Percentage of the crop cycle when flowering is maximum,unitless,50,40,60
 k0,initial rate of sugar consumption for synthesis of other compounds,unitless,4,3,6
