@@ -93,14 +93,14 @@ cumba_par$WaterStressSensitivity$value<-7 #6-10
 cumba_par$RootIncrease$value<-0.55 #0.5-1.5
 cumba_par$Topt$value<-24 #22-28
 cumba_par$k0$value<-4 #2-6
-cumba_par$FruitWaterContentDecreaseMax$value<-0.01 #0.0001-0.001
-cumba_par$FruitWaterContentInc$value<-0.10 #0.05-0.15
+cumba_par$FruitWaterContentDecreaseMax$value<-0.002 #0.0001-0.001
+cumba_par$FruitWaterContentInc$value<-0.14 #0.05-0.15
 
 ###
 
 #old parameters set
 cumba_par$Tcold$value<-5
-cumba_par$FIntMax$value<-.91
+cumba_par$FIntMax$value<-.9
 cumba_par$TransplantingLag$value<-9
 cumba_par$InitialInt$value<-.001
 cumba_par$RootDepthInitial$value<-5
@@ -111,8 +111,8 @@ cumba_par$FruitWaterContentMin$value<-0.8
 
 
 # Define parameters in calibration
-pars <- c("FloweringLag", "FruitWaterContentDecreaseMax","RUE", 
-          "FruitWaterContentMin","WaterStressSensitivity")
+pars <- c("HalfIntSenescence", "FruitWaterContentMax","RootDepthMax", 
+          "WaterStressSensitivity","RootIncrease","FruitWaterContentInc", "RUE")
 
 
 # Extract lower and upper bounds
@@ -127,19 +127,18 @@ experiments<- unique(soil$ID)
 
 
 
-lowerPar<-c(28,.001,2.5,55,.75,4)
-upperPar<-c(35,0.002,3.5,85,.85,9)
+lowerPar<-c(100,75,3,.35,2.5)
+upperPar<-c(130,90,6,.55,3.2)
 
 # --- Define Genetic Algorithm Loss Function ---
 lossFunctionGA <- function(params, weather) {
   
   # Assign parameter values to model
-  cumba_par$FloweringLag$value<-params[1]
-  cumba_par$FruitWaterContentDecreaseMax$value<-params[2]
-  cumba_par$RUE$value<-params[3]
-  cumba_par$DepletionFraction$value<-params[4]
-  cumba_par$FruitWaterContentMin$value<-params[5]
-  cumba_par$WaterStressSensitivity$value<-params[6]
+  cumba_par$HalfIntSenescence$value<-params[1]
+  cumba_par$RootDepthMax$value<-params[2]
+  cumba_par$WaterStressSensitivity$value<-params[3]
+  cumba_par$RootIncrease$value<-params[4]
+  cumba_par$RUE$value<-params[5]
   
   # Run crop simulation
   results <- list()
@@ -234,20 +233,13 @@ paramCalibrated <- readRDS(paste0(inputDir,"\\ga_result_04_25_26.rds"))
 #[[1]]
 
 # Update model parameters
+cumba_par$HalfIntSenescence$value<-paramCalibrated$best_params[1]
+cumba_par$RootDepthMax$value<-paramCalibrated$best_params[2]
+cumba_par$WaterStressSensitivity$value<-paramCalibrated$best_params[3]
+cumba_par$RootIncrease$value<-paramCalibrated$best_params[4]
+cumba_par$RUE$value<-paramCalibrated$best_params[5]
 
-cumba_par$KcMax$value<-1.15#paramCalibrated$best_params[1]
-cumba_par$FruitWaterContentMax$value<-paramCalibrated$best_params[2]
-cumba_par$RootDepthMax$value<-paramCalibrated$best_params[3]
-cumba_par$FloweringLag$value<-paramCalibrated$best_params[4]
-cumba_par$CycleLength$value<-paramCalibrated$best_params[5]  
-cumba_par$FruitWaterContentDecreaseMax$value<-paramCalibrated$best_params[6]
-cumba_par$FIntMax$value<-paramCalibrated$best_params[7]
-cumba_par$RootIncrease$value<-paramCalibrated$best_params[8]
-cumba_par$FloweringMax$value<-paramCalibrated$best_params[9]
-cumba_par$FruitWaterContentInc$value<-paramCalibrated$best_params[10]
-cumba_par$RUE$value<-paramCalibrated$best_params[11]
-cumba_par$HalfIntSenescence$value<-paramCalibrated$best_params[12]
-cumba_par$k0$value<-paramCalibrated$best_params[13]
+
 
 # Perform final simulation
 experiments<- unique(soil$ID)
@@ -307,22 +299,14 @@ scatterYield
 library(ggplot2)
 
 lmBrix <- lm(brixAct ~ brix_ref, data = out_calib)
-r2 <- summary(lmBrix)$r.squared
+summary(lmBrix)
 
 scatterBrix <- out_calib |>
   ggplot(aes(x = brix_ref, y = brixAct)) +
   geom_point() +
-  geom_smooth(method = "lm", formula = y ~ x) +
-  annotate(
-    "text",
-    x = Inf, y = -Inf,
-    label = paste0("R² = ", round(r2, 3)),
-    hjust = 1.1, vjust = -0.5,
-    size = 5
-  )
+  geom_smooth(method = "lm", formula = y ~ x) 
 
 scatterBrix
-
 
 
 
@@ -342,21 +326,19 @@ optimizedSimulation <- optimizedSimulation %>%
   dplyr::select(-row_number_within_group, -last_row) %>%
   ungroup()
 
-# --- Visualization ---
-
 ggplot(optimizedSimulation, aes(x = daysAfterSowing)) +
   #geom_line(aes(x = doy, y = cycleCompletion*8), color = "tomato3", alpha = 1, size = 1) +
   #geom_line(aes(x = doy, y = yield), color = "tomato3", alpha = 1, size = 1) +
-  #  geom_line(aes(x = doy, y = fIntAct*100), color = "tomato3", alpha = 1, size = 1) +
+     geom_line(aes(x = doy, y = fIntAct*100), color = "tomato3", alpha = 1, size = 1) +
   #geom_line(aes(x = doy, y = et0), color = "pink4", alpha = 1, size = 1) +
   #geom_line(aes(x = doy, y = fIntPot), color = "blue", alpha = 1, size = 1) +
-  #geom_line(aes(x = doy, y = fruitsStateAct), color = "tomato3", alpha = 1, size = 1) +
+ # geom_line(aes(x = doy, y = fruitsStateAct), color = "tomato3", alpha = 1, size = 1) +
     geom_line(aes(x = doy, y = fruitFreshWeightAct*0.01), color = "black", alpha = 1, size = 1) +
-   # geom_line(aes(x = doy, y = waterStress*100), color = "blue", alpha = 1, size = .5) +
+   geom_line(aes(x = doy, y = waterStress*100), color = "blue", alpha = 1, size = .5) +
  # # geom_line(aes(x = doy, y = floweringStateAct*100), color = "black", alpha = 1, size = 2) +
-    geom_line(aes(x = doy, y = brixAct*10), color = "black", alpha = 1, size = .5) +
+   # geom_line(aes(x = doy, y = brixAct*10), color = "black", alpha = 1, size = .5) +
   # geom_line(aes(x = doy, y = fruitWaterContentAct*100), color = "tomato", alpha = 1, size = .5) +
-  # geom_line(aes(x = doy, y = kc*100), color = "red", alpha = 1, size = 1) +
+   geom_line(aes(x = doy, y = kc*100), color = "red", alpha = 1, size = 1) +
   stat_summary(
    aes(x = doy, y = yield_ref),
     fun.data = mean_sdl,

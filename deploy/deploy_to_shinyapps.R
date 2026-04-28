@@ -109,8 +109,18 @@ deps <- tryCatch(
   error = function(e) NULL
 )
 if (!is.null(deps)) {
-  cat("  pacchetti rilevati:\n")
-  print(deps[, c("Package", "Version", "Source")], row.names = FALSE)
+  cat("  pacchetti rilevati: ", nrow(deps), "\n", sep = "")
+  # rsconnect cambia colonne fra versioni; mostriamo SOLO quelle che esistono
+  # davvero nel data.frame restituito (a volte sono Package/Version/Source,
+  # a volte package/version/source, a volte vuoto del tutto).
+  cols_show <- intersect(c("Package", "package", "Version", "version",
+                           "Source",  "source"),
+                         names(deps))
+  if (length(cols_show)) {
+    print(head(deps[, cols_show, drop = FALSE], 30L), row.names = FALSE)
+    if (nrow(deps) > 30L)
+      cat("  ... e altri ", nrow(deps) - 30L, " pacchetti.\n", sep = "")
+  }
 }
 
 cat("\n[4/4] Deploy in corso (puo' richiedere 5-10 minuti)...\n")

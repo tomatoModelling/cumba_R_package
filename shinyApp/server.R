@@ -133,6 +133,84 @@ function(input, output, session) {
     irr_overrides(ovr)
   }, ignoreInit = TRUE)
 
+  # Round 7: Reset di tutte le scelte agronomiche (skip + applied)
+  observeEvent(input$irr_clear_overrides, {
+    irr_overrides(list())
+    showNotification("Schedule resettato — tutte le scelte agronomiche cancellate.",
+                     type = "default", duration = 3)
+  })
+
+  # Round 7: Export CSV — l'agricoltore scarica il file con tutte le sue
+  # scelte (skip + applied), poi puo' ricaricarlo a una sessione successiva
+  # invece di re-inserire tutto.
+  output$irr_export <- downloadHandler(
+    filename = function() {
+      sprintf("cumba_irrigazioni_%s.csv",
+              format(Sys.Date(), "%Y%m%d"))
+    },
+    content = function(file) {
+      ovr <- irr_overrides()
+      if (!length(ovr)) {
+        # CSV vuoto ma con header, cosi' ricaricarlo non rompe.
+        write.csv(data.frame(date = as.Date(character()),
+                             mm = numeric(), action = character(),
+                             stringsAsFactors = FALSE),
+                  file, row.names = FALSE)
+        return(invisible(NULL))
+      }
+      df <- do.call(rbind, lapply(names(ovr), function(k) {
+        e <- ovr[[k]]
+        data.frame(date = as.Date(k),
+                   mm = as.numeric(e$mm %||% 0),
+                   action = as.character(e$action %||% "skip"),
+                   stringsAsFactors = FALSE)
+      }))
+      df <- df[order(df$date), ]
+      write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  # Round 7: Import CSV — popola irr_overrides() leggendo un file salvato
+  # in precedenza (formato: date,mm,action). Il modello si re-esegue in
+  # automatico per via della reattivita' su irr_overrides().
+  observeEvent(input$irr_import, {
+    f <- input$irr_import
+    req(f, f$datapath)
+    df <- tryCatch(
+      utils::read.csv(f$datapath, stringsAsFactors = FALSE),
+      error = function(e) {
+        showNotification(sprintf("File non leggibile: %s",
+                                 conditionMessage(e)),
+                         type = "error", duration = 6)
+        NULL
+      }
+    )
+    if (is.null(df) || !nrow(df)) return()
+    if (!all(c("date", "action") %in% names(df))) {
+      showNotification("Il CSV deve avere le colonne: date, mm, action",
+                       type = "error", duration = 6)
+      return()
+    }
+    df$date   <- as.Date(df$date)
+    df$action <- as.character(df$action)
+    if ("mm" %in% names(df)) df$mm <- as.numeric(df$mm)
+    df <- df[!is.na(df$date) & df$action %in% c("skip", "applied"), ]
+    new_ovr <- list()
+    for (i in seq_len(nrow(df))) {
+      key <- format(df$date[i], "%Y-%m-%d")
+      if (df$action[i] == "skip") {
+        new_ovr[[key]] <- list(action = "skip")
+      } else {
+        new_ovr[[key]] <- list(action = "applied",
+                               mm = as.numeric(df$mm[i] %||% 0))
+      }
+    }
+    irr_overrides(new_ovr)
+    showNotification(sprintf("Caricate %d scelte agronomiche dal file.",
+                             length(new_ovr)),
+                     type = "default", duration = 4)
+  })
+
   # Aggiunta manuale (form a fondo lista): data + mm
   observeEvent(input$irr_apply_btn, {
     d <- input$irr_apply_date
@@ -236,11 +314,15 @@ function(input, output, session) {
   params_df  <- params_raw |> debounce(350)
 
   # ===== Run cumba safely for one year ====================================
+  # Round 5: aggiunto parametro `irrigationOverride` opzionale (data.frame
+  # con date+mm+action) per re-runnare la stagione con le scelte agronomiche
+  # dell'agricoltore (skip / applied). Se NULL, si comporta come prima.
   run_one_year <- function(weather_year, par, transplantingDOY,
-                           ws_v, ws_r, ws_p, t_v, t_r, t_p) {
+                           ws_v, ws_r, ws_p, t_v, t_r, t_p,
+                           irrigationOverride = NULL) {
     if (is.null(weather_year) || !nrow(weather_year)) return(NULL)
-    tryCatch({
-      res <- cumba_scenario(
+    res <- tryCatch({
+      cumba_scenario(
         weather            = weather_year,
         param              = par,
         estimateRad        = TRUE,
@@ -251,12 +333,39 @@ function(input, output, session) {
           reproductive = list(wsLevel = ws_r, turnMin = t_r),
           ripening     = list(wsLevel = ws_p, turnMin = t_p)
         ),
-        fullOut            = TRUE
+        fullOut            = TRUE,
+        irrigationOverride = irrigationOverride
       )
-      if (is.null(res) || !nrow(res)) return(NULL)
-      res$DATE <- as.Date(paste(res$year, res$doy, sep = "-"), format = "%Y-%j")
-      res
-    }, error = function(e) NULL)
+    }, error = function(e) {
+      # Round 7: solo log nei server logs (debug), niente popup utente.
+      # In caso di errore ritentiamo senza override piu' avanti in current_run.
+      message("[run_one_year] cumba_scenario ERROR: ", conditionMessage(e))
+      NULL
+    })
+    if (is.null(res) || !nrow(res)) return(NULL)
+    res$DATE <- as.Date(paste(res$year, res$doy, sep = "-"), format = "%Y-%j")
+    res
+  }
+
+  # Helper: trasforma irr_overrides() (named list) -> data.frame standard
+  # accettato da cumba_scenario.
+  build_override_df <- function(ovr) {
+    if (!length(ovr)) return(NULL)
+    rows <- lapply(names(ovr), function(k) {
+      e <- ovr[[k]]
+      if (identical(e$action, "skip"))
+        return(data.frame(date = as.Date(k), mm = 0, action = "skip",
+                          stringsAsFactors = FALSE))
+      if (identical(e$action, "applied"))
+        return(data.frame(date = as.Date(k),
+                          mm = as.numeric(e$mm %||% 0),
+                          action = "applied",
+                          stringsAsFactors = FALSE))
+      NULL
+    })
+    rows <- Filter(Negate(is.null), rows)
+    if (!length(rows)) return(NULL)
+    do.call(rbind, rows)
   }
 
   # ===== Historical runs ==================================================
@@ -294,26 +403,197 @@ function(input, output, session) {
     })
   })
 
-  # ===== Current-season run (re-fires on slider changes too) ==============
+  # ===== Current-season run (re-fires on slider changes E su irr_overrides) ==
+  # Round 5: la simulazione si ri-esegue ANCHE quando l'agricoltore aggiunge
+  # o salta un'irrigazione, applicando l'override al modello (vedi
+  # cumba_scenario(irrigationOverride=...) in R/Main.R).
+  # Round 9: reactiveVal per il banner status override (DEVE stare PRIMA
+  # di current_run, perche' current_run lo aggiorna).
+  override_info <- reactiveVal(list(n_skip = 0L, n_applied = 0L,
+                                     dates = character(0)))
+
+  # Round 18: strategia con DEBOUNCE 1.2s. Gli slider aggiornano lo
+  # snapshot dopo 1.2s di inattivita'; l'utente puo' anche premere
+  # "🔄 Ricalcola con regole" nello scheduling per forzare subito.
+  strategy_snapshot <- reactive({
+    list(
+      ws_veg = input$ws_veg %||% 0.8, ws_rep = input$ws_rep %||% 0.8,
+      ws_rip = input$ws_rip %||% 0.8,
+      turn_veg = input$turn_veg %||% 2,
+      turn_rep = input$turn_rep %||% 2,
+      turn_rip = input$turn_rip %||% 2
+    )
+  }) |> debounce(1200)
+
+  # Trigger manuale per "Ricalcola con regole" (nello scheduling)
+  recalc_trigger <- reactiveVal(0L)
+  observeEvent(input$recalcWithRules, {
+    recalc_trigger(recalc_trigger() + 1L)
+    showNotification("✓ Ricalcolo con la strategia attuale...",
+                     type = "default", duration = 2)
+  })
+
   current_run <- reactive({
     om  <- weather_data();  req(om)
     par <- params_df();     req(par)
+    snap <- strategy_snapshot();  req(snap)
 
     cur_yr <- as.integer(format(Sys.Date(), "%Y"))
+    today  <- Sys.Date()
     om_cumba <- om_to_cumba(om)
     om_cumba$year <- lubridate::year(om_cumba$DATE)
     wy <- om_cumba[om_cumba$year == cur_yr, , drop = FALSE]
 
+    # Round 10: ESTENDO il weather oltre today+16 con la coda dell'ULTIMO
+    # anno storico disponibile (DOY-mappato sul cur_yr). Senza questo, il
+    # modello si ferma a today+16 e gli override su date future (es. il
+    # 28/05 quando oggi e' 27/04) NON vengono applicati perche' i giorni
+    # corrispondenti non vengono processati. Con la coda climatologica,
+    # cumba_scenario percorre TUTTA la stagione e applica l'override.
+    wy_max_date <- if (nrow(wy)) max(as.Date(wy$DATE), na.rm = TRUE) else today
+    cutoff_doy  <- as.integer(format(wy_max_date, "%j"))
+    past_years <- sort(unique(om_cumba$year[om_cumba$year < cur_yr]),
+                       decreasing = TRUE)
+    if (length(past_years)) {
+      tail_y <- past_years[1L]
+      tail_w <- om_cumba[om_cumba$year == tail_y, , drop = FALSE]
+      tail_w$.doy <- as.integer(format(tail_w$DATE, "%j"))
+      tail_w <- tail_w[tail_w$.doy > cutoff_doy, , drop = FALSE]
+      if (nrow(tail_w)) {
+        tail_w$DATE <- as.Date(sprintf("%d-%03d", cur_yr, tail_w$.doy),
+                               format = "%Y-%j")
+        tail_w$year <- cur_yr
+        tail_w$.doy <- NULL
+        wy <- dplyr::bind_rows(wy, tail_w)
+        wy <- wy[!duplicated(wy$DATE), ]
+        wy <- wy[order(wy$DATE), ]
+        message(sprintf("[current_run] meteo esteso: cur=%d gg + climatologia=%d gg (anno %d)",
+                        sum(as.Date(wy$DATE) <= wy_max_date),
+                        sum(as.Date(wy$DATE) > wy_max_date),
+                        tail_y))
+      }
+    }
+
+    ovr_df <- build_override_df(irr_overrides())
+
+    # Round 20: modalita' "Solo le mie scelte" (freeze).
+    # Quando ON, il modello NON propone irrigazioni automatiche oltre quelle
+    # gia' decise dall'agricoltore. Cosi' l'utente vede l'IMPATTO PURO del
+    # togliere/aggiungere senza compensazione.
+    # Implementazione: faccio un primo run normale per ottenere le date
+    # delle irrigazioni automatiche, poi le aggiungo all'override come
+    # "skip" — tranne quelle che l'utente ha esplicitamente "applied".
+    freeze_mode <- isTRUE(input$freezeMode)
+    if (freeze_mode) {
+      pre_run <- run_one_year(wy, par, transplantingDOY(),
+                              snap$ws_veg, snap$ws_rep, snap$ws_rip,
+                              snap$turn_veg, snap$turn_rep, snap$turn_rip,
+                              irrigationOverride = NULL)
+      if (!is.null(pre_run) && nrow(pre_run)) {
+        auto_dates <- as.Date(pre_run$DATE[pre_run$irrigation > 0])
+        # Date che l'utente ha gia' agito (skip o applied) -> NON aggiungere
+        existing_keys <- if (!is.null(ovr_df)) format(ovr_df$date, "%Y-%m-%d")
+                         else character(0)
+        new_skip_dates <- auto_dates[!format(auto_dates, "%Y-%m-%d") %in% existing_keys]
+        if (length(new_skip_dates)) {
+          extra_df <- data.frame(date = new_skip_dates,
+                                 mm = 0, action = "skip",
+                                 stringsAsFactors = FALSE)
+          ovr_df <- if (is.null(ovr_df)) extra_df
+                    else rbind(ovr_df, extra_df)
+        }
+        message(sprintf("[current_run] FREEZE attivo: %d skip auto-aggiunti",
+                        length(new_skip_dates)))
+      }
+    }
+
+    # Round 9: log dettagliato per debug
+    if (!is.null(ovr_df)) {
+      message(sprintf("[current_run] OVERRIDE -> %d righe: %d skip + %d applied",
+                      nrow(ovr_df),
+                      sum(ovr_df$action == "skip"),
+                      sum(ovr_df$action == "applied")))
+      message("[current_run] dates override: ",
+              paste(format(ovr_df$date, "%Y-%m-%d"), collapse = ", "))
+    }
+
     out <- run_one_year(wy, par, transplantingDOY(),
-                        input$ws_veg, input$ws_rep, input$ws_rip,
-                        input$turn_veg, input$turn_rep, input$turn_rip)
-    if (is.null(out)) return(NULL)
+                        snap$ws_veg, snap$ws_rep, snap$ws_rip,
+                        snap$turn_veg, snap$turn_rep, snap$turn_rip,
+                        irrigationOverride = ovr_df)
+    if (is.null(out)) {
+      if (!is.null(ovr_df)) {
+        message("[current_run] retry SENZA override (run originale fallito)")
+        out <- run_one_year(wy, par, transplantingDOY(),
+                            snap$ws_veg, snap$ws_rep, snap$ws_rip,
+                            snap$turn_veg, snap$turn_rep, snap$turn_rip,
+                            irrigationOverride = NULL)
+      }
+      if (is.null(out)) return(NULL)
+    }
+
+    # Round 9: salva info override in reactive separato per banner UI
+    override_info(if (!is.null(ovr_df))
+      list(n_skip = sum(ovr_df$action == "skip"),
+           n_applied = sum(ovr_df$action == "applied"),
+           dates = format(ovr_df$date, "%d %b"))
+      else list(n_skip = 0L, n_applied = 0L, dates = character(0)))
+
+    # Round 17: il modello cumba mette brixAct=0/NA quasi sempre (la
+    # condizione fwcPot >= fwcMax*0.99 e' rara). Calcoliamo il brix
+    # MANUALMENTE dalla formula:
+    #   brix = (100 * carbonSugarState) / (gammaSugar * fruitFreshWeightAct)
+    # dove gammaSugar=0.42 (costante hard-coded in cumba). Cosi' la curva
+    # brix mostra l'accumulo dello zucchero durante la maturazione.
+    if (all(c("carbonSugarState", "fruitFreshWeightAct") %in% names(out))) {
+      gs <- 0.42
+      cs <- as.numeric(out$carbonSugarState)
+      fw <- as.numeric(out$fruitFreshWeightAct)
+      bx_calc <- ifelse(is.finite(cs) & cs > 0 &
+                        is.finite(fw) & fw > 0,
+                        (100 * cs) / (gs * fw),
+                        0)
+      out$brixAct_calc <- bx_calc
+      message(sprintf("[current_run] brix CALCOLATO: max=%.2f n_pos=%d (max carbonSugar=%.4f, max fwAct=%.2f)",
+                      max(bx_calc, na.rm = TRUE),
+                      sum(bx_calc > 0, na.rm = TRUE),
+                      max(cs, na.rm = TRUE),
+                      max(fw, na.rm = TRUE)))
+    }
+
+    # Round 9: log diff bilancio idrico nei giorni override
+    if (!is.null(ovr_df) && "ftsw" %in% names(out)) {
+      ovr_dates_chr <- format(ovr_df$date, "%Y-%m-%d")
+      out_dates_chr <- format(as.Date(out$DATE), "%Y-%m-%d")
+      ix_match <- which(out_dates_chr %in% ovr_dates_chr)
+      if (length(ix_match)) {
+        message(sprintf("[current_run] post-override ftsw + irrigation:"))
+        for (i in ix_match) {
+          message(sprintf("    %s : irrig=%.1f mm, ftsw=%.3f, ws=%.3f",
+                          out_dates_chr[i],
+                          as.numeric(out$irrigation[i]),
+                          as.numeric(out$ftsw[i]),
+                          if ("waterStress" %in% names(out))
+                            as.numeric(out$waterStress[i]) else NA_real_))
+        }
+      }
+    }
 
     fc_lookup <- om[, c("DATE", "is_forecast")]
     fc_lookup$DATE <- as.Date(fc_lookup$DATE)
     out <- dplyr::left_join(out, fc_lookup, by = "DATE")
     out$is_forecast[is.na(out$is_forecast)] <- FALSE
     out
+  })
+
+  output$override_status_banner <- renderUI({
+    info <- override_info()
+    if ((info$n_skip + info$n_applied) == 0L) return(NULL)
+    div(class = "override-banner",
+        HTML(sprintf("⚙ <b>Le tue scelte agronomiche sono ATTIVE nella simulazione</b>: %d salt%s, %d aggiunt%s &mdash; %s",
+                     info$n_skip, ifelse(info$n_skip == 1L, "o", "i"),
+                     info$n_applied, ifelse(info$n_applied == 1L, "a", "e"),
+                     paste(info$dates, collapse = ", "))))
   })
 
   # ===== Ensemble proiezione (analoghi storici) ==========================
@@ -375,6 +655,9 @@ function(input, output, session) {
   }) |> debounce(800)
 
   # Envelope ensemble (P10/P50/P90 per DOY) per il "fan" sul plot.
+  # Round 8: per il brix, usiamo la mediana SOLO dei valori > 0 (mean_pos),
+  # cosi' la curva mostra il brix "tipico" durante l'accumulo zuccheri
+  # invece di essere schiacciata a 0 dai giorni pre-fioritura.
   current_run_envelope <- reactive({
     ens <- current_run_ensemble()
     if (is.null(ens) || !nrow(ens)) return(NULL)
@@ -387,7 +670,11 @@ function(input, output, session) {
       summarise(across(all_of(cols),
                        list(p10 = ~quantile(., 0.10, na.rm = TRUE),
                             p50 = ~quantile(., 0.50, na.rm = TRUE),
-                            p90 = ~quantile(., 0.90, na.rm = TRUE)),
+                            p90 = ~quantile(., 0.90, na.rm = TRUE),
+                            mean_pos = ~{
+                              x <- .[is.finite(.) & . > 0]
+                              if (length(x)) mean(x) else 0
+                            }),
                        .names = "{.col}_{.fn}"),
                 .groups = "drop") |>
       mutate(DATE = as.Date(sprintf("%d-%03d", cur_yr, doy),
@@ -419,28 +706,51 @@ function(input, output, session) {
     env
   })
 
-  # ===== SITE HEADER (sito + stagione, molto visibile) ===================
+  # ===== SITE HEADER (sito + data trapianto inline, molto visibile) ======
+  # Round 8: la data trapianto e' SETTABILE direttamente qui (non piu' nel
+  # pannello strategia). E' la prima leva agronomica; deve stare in cima.
   output$site_header <- renderUI({
     pt <- selected_point()
-    if (is.null(pt)) return(NULL)   # in pick mode l'header non serve
+    if (is.null(pt)) return(NULL)
 
     nm <- place_name()
     coords <- sprintf("%.3f°N, %.3f°E", pt[2], pt[1])
     where_name <- if (!is.null(nm) && nzchar(nm)) nm else "Campo selezionato"
 
     cur_yr <- as.integer(format(Sys.Date(), "%Y"))
-    trans_date <- as.Date(input$transplantingDate %||% Sys.Date())
-    trans_str  <- format(trans_date, "%d %b")
 
     div(class = "site-header",
         div(class = "site-pin", "📍"),
         div(class = "site-where",
             div(class = "site-name", where_name),
             div(class = "site-coords", coords)),
+        # Round 19: tipo di suolo (sabbioso/limoso/argilloso) -> influenza
+        # FieldCapacity e WiltingPoint via pedotransfer.
+        div(class = "site-soil",
+            tags$label("Suolo:", class = "ss-trans-label"),
+            selectInput("soilType",
+                        label = NULL,
+                        choices = .SOIL_CHOICES,
+                        selected = isolate(input$soilType %||% "loam"),
+                        width = "110px")),
         div(class = "site-season",
-            div(class = "ss-label", "Stagione"),
-            div(class = "ss-value",
-                sprintf("%d · trapianto %s", cur_yr, trans_str)))
+            div(class = "ss-label", sprintf("Stagione %d", cur_yr)),
+            div(class = "ss-trans-row",
+                tags$label("Trapianto:",
+                           class = "ss-trans-label"),
+                dateInput("transplantingDate",
+                          label = NULL,
+                          # Round 20: default 20 aprile dell'anno corrente
+                          value = isolate(input$transplantingDate %||%
+                                          as.Date(sprintf("%d-04-20", cur_yr))),
+                          format = "dd/mm/yyyy",
+                          weekstart = 1,
+                          language = "it",
+                          width = "120px"),
+                actionButton("suggestTransplant",
+                             HTML("💡"),
+                             class = "btn btn-suggest btn-suggest-inline",
+                             title = "Suggerisci una data senza pioggia")))
     )
   })
 
@@ -484,13 +794,165 @@ function(input, output, session) {
            sprintf("%s %s", info$phase_icon, info$phase))
       else NULL
 
+    # Round 8: percentuale completamento ciclo + fase, da current_run.
+    # Mostriamo "Ciclo: X% - fase: Y" SEMPRE visibile (anche quando
+    # il consiglio di oggi e' "nessuna irrigazione" => l'agricoltore
+    # vede comunque a che punto e' della stagione).
+    cur <- current_run()
+    cycle_str <- NULL
+    if (!is.null(cur) && nrow(cur)) {
+      ix <- which(as.Date(cur$DATE) == today)
+      if (length(ix) && "cycleCompletion" %in% names(cur)) {
+        cc <- as.numeric(cur$cycleCompletion[ix[1]])
+        if (is.finite(cc) && cc >= 0)
+          cycle_str <- sprintf("· Ciclo %.0f%% completato", min(cc, 100))
+      }
+    }
+
     div(class = "today-card",
         style = sprintf("--today-color:%s", info$color),
         div(class = "today-icon", info$icon),
         div(class = "today-body",
-            div(class = "today-date", date_str),
+            div(class = "today-date",
+                date_str,
+                if (!is.null(cycle_str))
+                  span(class = "today-cycle", cycle_str)),
             div(class = "today-headline", info$headline),
             div(class = "today-detail", phase_badge, info$detail))
+    )
+  })
+
+  # ===== Round 19: 2 mini-grafici (yield + brix) con boxplot storico
+  # vs punto corrente. Compatto, di lato ai 2 grafici principali.
+  output$mini_yield_brix <- renderPlotly({
+    h <- historical_runs(); cur <- current_run()
+    if (is.null(h) || !nrow(h)) return(NULL)
+    last_h <- h |> dplyr::group_by(year) |> dplyr::slice_tail(n = 1L) |> dplyr::ungroup()
+    hist_yield <- as.numeric(last_h$fruitFreshWeightAct) / 100
+    hist_brix  <- as.numeric(last_h$brixAct)
+    cur_yield <- if (!is.null(cur) && nrow(cur))
+      tail(as.numeric(cur$fruitFreshWeightAct), 1L) / 100 else NA_real_
+    cur_brix  <- if (!is.null(cur) && nrow(cur) && "brixAct_calc" %in% names(cur)) {
+      bx <- as.numeric(cur$brixAct_calc)
+      bx <- bx[is.finite(bx) & bx > 0]
+      if (length(bx)) tail(bx, 1L) else NA_real_
+    } else NA_real_
+    p_yield <- plot_ly() |>
+      add_trace(y = hist_yield, type = "box", name = "Storico",
+                marker = list(color = "#9e9e9e"),
+                line = list(color = "#9e9e9e"),
+                fillcolor = "rgba(158,158,158,0.18)") |>
+      add_trace(y = cur_yield, x = "Storico", type = "scatter",
+                mode = "markers", name = "Quest'anno",
+                marker = list(color = "#6a1b9a", size = 14,
+                              symbol = "diamond",
+                              line = list(color = "#fff", width = 2))) |>
+      layout(title = list(text = "<b>🍅 Yield (t/ha)</b>",
+                           font = list(size = 12, color = "#6a1b9a")),
+             paper_bgcolor = "#ffffff", plot_bgcolor = "#ffffff",
+             showlegend = FALSE,
+             margin = list(l = 30, r = 5, t = 30, b = 20),
+             yaxis = list(zeroline = FALSE, gridcolor = "#eef0f2"),
+             xaxis = list(showticklabels = FALSE))
+    p_brix <- plot_ly() |>
+      add_trace(y = hist_brix, type = "box", name = "Storico",
+                marker = list(color = "#9e9e9e"),
+                line = list(color = "#9e9e9e"),
+                fillcolor = "rgba(158,158,158,0.18)") |>
+      add_trace(y = cur_brix, x = "Storico", type = "scatter",
+                mode = "markers", name = "Quest'anno",
+                marker = list(color = "#c62828", size = 14,
+                              symbol = "diamond",
+                              line = list(color = "#fff", width = 2))) |>
+      layout(title = list(text = "<b>🍯 Brix (°)</b>",
+                           font = list(size = 12, color = "#c62828")),
+             paper_bgcolor = "#ffffff", plot_bgcolor = "#ffffff",
+             showlegend = FALSE,
+             margin = list(l = 30, r = 5, t = 30, b = 20),
+             yaxis = list(zeroline = FALSE, gridcolor = "#eef0f2"),
+             xaxis = list(showticklabels = FALSE))
+    subplot(p_yield, p_brix, nrows = 2, margin = 0.08, titleY = TRUE) |>
+      config(displayModeBar = FALSE)
+  })
+
+  # ===== Round 16: 4 KPI FENOLOGICI (fine trapianto, fioritura inizio,
+  # massima fioritura, maturazione). Calcolati dal run corrente (cur).
+  output$pheno_kpis <- renderUI({
+    cur <- current_run()
+    if (is.null(cur) || !nrow(cur)) return(NULL)
+    today <- Sys.Date()
+
+    # Fine trapianto: ultimo giorno con phenoCode == 0 (oppure ultimo
+    # giorno della fase di transplanting prima di passare a vegetativa).
+    end_transplant <- if ("phenoCode" %in% names(cur)) {
+      ix <- which(as.integer(cur$phenoCode) == 1L)
+      if (length(ix)) as.Date(cur$DATE[min(ix)]) else NA
+    } else NA
+
+    # Inizio fioritura: primo giorno con floweringRateAct > 0
+    start_flower <- if ("floweringRateAct" %in% names(cur)) {
+      flo <- as.numeric(cur$floweringRateAct)
+      ix <- which(is.finite(flo) & flo > 0)
+      if (length(ix)) as.Date(cur$DATE[min(ix)]) else NA
+    } else NA
+
+    # Massima fioritura: giorno con max(floweringRateAct)
+    peak_flower <- if ("floweringRateAct" %in% names(cur)) {
+      flo <- as.numeric(cur$floweringRateAct)
+      flo[!is.finite(flo)] <- 0
+      if (max(flo) > 0) as.Date(cur$DATE[which.max(flo)]) else NA
+    } else NA
+
+    # Round 17: maturazione = giorno con cycleCompletion=100 (= raccolto),
+    # NON inizio della fase ripening (che e' al 70% del ciclo).
+    start_ripening <- if ("cycleCompletion" %in% names(cur)) {
+      cc <- as.numeric(cur$cycleCompletion)
+      ix <- which(is.finite(cc) & cc >= 100)
+      if (length(ix)) as.Date(cur$DATE[min(ix)])
+      else {
+        # Fallback: se non raggiunge 100, l'ultimo giorno simulato
+        as.Date(tail(cur$DATE, 1L))
+      }
+    } else if ("phenoCode" %in% names(cur)) {
+      ix <- which(as.integer(cur$phenoCode) == 3L)
+      if (length(ix)) as.Date(cur$DATE[max(ix)]) else NA
+    } else NA
+
+    # Round 18: nomi dei mesi in ITALIANO
+    mesi_it <- c("Gen","Feb","Mar","Apr","Mag","Giu",
+                 "Lug","Ago","Set","Ott","Nov","Dic")
+
+    pheno_kpi <- function(label, icon, d, color, today) {
+      passed <- !is.na(d) && d <= today
+      cls <- if (passed) "pheno-kpi pheno-kpi-passed"
+             else "pheno-kpi"
+      # Round 19: layout su 2 righe — data PRINCIPALE (riga 1, grossa),
+      # delta "fra X gg" (riga 2, piccola).
+      d_str <- if (is.na(d)) "—"
+               else sprintf("%d %s",
+                            as.integer(format(d, "%d")),
+                            mesi_it[as.integer(format(d, "%m"))])
+      delta_str <- if (is.na(d)) ""
+                   else {
+                     delta <- as.integer(d - today)
+                     if (delta < 0)  sprintf("%d gg fa", -delta)
+                     else if (delta == 0) "oggi"
+                     else sprintf("fra %d gg", delta)
+                   }
+      div(class = cls, style = sprintf("--pheno-color: %s;", color),
+          div(class = "pheno-kpi-icon", icon),
+          div(class = "pheno-kpi-body",
+              div(class = "pheno-kpi-label", label),
+              div(class = "pheno-kpi-date", d_str),
+              div(class = "pheno-kpi-delta", delta_str)))
+    }
+
+    # Round 18: fiore GIALLO (non rosa) per massima fioritura — pomodoro
+    div(class = "pheno-kpis-row",
+        pheno_kpi("Fine trapianto", "🌱", end_transplant, "#43a047", today),
+        pheno_kpi("Inizio fioritura", "🌼", start_flower, "#fbc02d", today),
+        pheno_kpi("Piena fioritura", "🌻", peak_flower, "#fb8c00", today),
+        pheno_kpi("Raccolto previsto", "🍅", start_ripening, "#e64a19", today)
     )
   })
 
@@ -633,19 +1095,61 @@ function(input, output, session) {
       ))
     }
 
-    # IMPORTANTE: i KPI di FINE CICLO (yield, brix, irrig totale) sono
-    # significativi solo come PROIEZIONE dell'ensemble. Il run deterministico
-    # cur si ferma a today+16, quindi il suo tail e' un valore mid-season
-    # (Brix=0, yield parziale, irrig parziale). Se l'ensemble non e' ancora
-    # pronto, mostriamo "—" invece di numeri sbagliati.
-    yield_t <- if (!is.null(yield_q)) yield_q[2] else NA_real_
-    brix    <- if (!is.null(brix_q))  brix_q[2]  else NA_real_
-    irr_mm  <- if (!is.null(irr_q))   irr_q[2]   else NA_real_
+    # Round 12: con weather esteso, cur copre tutta la stagione, quindi
+    # i tail() di cur sono valori di FINE CICLO. Per il brix prendo
+    # l'ULTIMO valore non-NA non-zero (che e' quello "vero" a maturita').
+    yield_t <- {
+      yt <- as.numeric(cur$fruitFreshWeightAct) / 100
+      yt <- yt[is.finite(yt)]
+      if (length(yt)) tail(yt, 1L) else NA_real_
+    }
+    brix <- {
+      # Round 17: usa brixAct_calc (calcolato lato shiny da carbonSugar)
+      bx <- if ("brixAct_calc" %in% names(cur))
+              as.numeric(cur$brixAct_calc)
+            else as.numeric(cur$brixAct)
+      bx <- bx[is.finite(bx) & bx > 0]
+      if (length(bx)) tail(bx, 1L) else NA_real_
+    }
+    irr_mm <- sum(cur$irrigation, na.rm = TRUE)
+    if (!is.finite(irr_mm)) irr_mm <- NA_real_
 
     # Per il KPI "irrig. fatte finora" usiamo il deterministico (e' osservato).
-    irr_to_date <- sum(cur$irrigation[as.Date(cur$DATE) <= Sys.Date()],
+    today <- Sys.Date()
+    irr_to_date <- sum(cur$irrigation[as.Date(cur$DATE) <= today],
                        na.rm = TRUE)
     if (!is.finite(irr_to_date)) irr_to_date <- 0
+
+    # Round 18: aggiungi le irrigazioni APPLICATE manualmente (override
+    # action="applied") che potrebbero non essere in cur$irrigation se la
+    # data e' diversa da quella consigliata dal modello.
+    ovr_now <- irr_overrides()
+    if (length(ovr_now)) {
+      for (k in names(ovr_now)) {
+        e <- ovr_now[[k]]
+        if (identical(e$action, "applied") && as.Date(k) <= today) {
+          # Evita doppio conteggio: se la data dell'override e' gia'
+          # nelle date di cur con irrigation>0, l'avevamo gia' contata
+          # tramite cur$irrigation. Aggiungo solo se NON gia' presente.
+          d_ovr <- as.Date(k)
+          ix_cur <- which(as.Date(cur$DATE) == d_ovr)
+          mm_in_cur <- if (length(ix_cur))
+            as.numeric(cur$irrigation[ix_cur[1]]) else 0
+          if (mm_in_cur == 0) {
+            irr_to_date <- irr_to_date + as.numeric(e$mm %||% 0)
+          }
+        }
+      }
+    }
+
+    # Round 12: con weather esteso (Round 10) cur copre TUTTA la stagione,
+    # quindi NON serve piu' sommare l'ensemble. Cosi' KPI e grafico
+    # mostrano lo STESSO numero di irrigazioni (no piu' mismatch 24 vs 12).
+    n_irr_future <- sum(cur$irrigation > 0 & as.Date(cur$DATE) > today,
+                        na.rm = TRUE)
+    n_irr_past   <- sum(cur$irrigation > 0 & as.Date(cur$DATE) <= today,
+                        na.rm = TRUE)
+    n_irr_total  <- n_irr_past + n_irr_future
 
     div(class = "kpi-row",
         kpi("🍅 Yield previsto",   yield_t, "t·ha⁻¹",
@@ -658,6 +1162,13 @@ function(input, output, session) {
         kpi("💧 Irrig. fine ciclo", irr_mm, "mm",
             delta = delta_pct(irr_mm, hist_irr_mm),
             range = irr_q,
+            klass = "irrig-events",
+            value_fmt = "%.0f"),
+        # Round 5: nuovo KPI con il numero di irrigazioni previste (passate +
+        # future). Sempre visibile l'aliquota residua per chi pianifica.
+        kpi(sprintf("📅 N° irrigazioni (%d future)",
+                    as.integer(n_irr_future)),
+            n_irr_total, "interventi",
             klass = "irrig-events",
             value_fmt = "%.0f"),
         kpi("💦 Irrig. fatte",     irr_to_date, "mm",
@@ -835,27 +1346,10 @@ function(input, output, session) {
            line = list(color = "#ef6c00", width = 1.4, dash = "dash"))
     )
 
-    # ---- Banda di INCERTEZZA crescente (dopo fine forecast) -------------
-    # Dividiamo l'intervallo (fc_end .. x_max) in 4 segmenti, ognuno piu'
-    # opaco del precedente. L'utente vede a colpo d'occhio che le proiezioni
-    # via via si allontanano nel tempo e perdono affidabilita'.
-    if (x_max > fc_end + 1L) {
-      total_days <- as.integer(x_max - fc_end)
-      n_seg <- 4L
-      seg_len <- max(1L, ceiling(total_days / n_seg))
-      for (k in seq_len(n_seg)) {
-        s_start <- fc_end + (k - 1L) * seg_len
-        s_end   <- min(fc_end + k * seg_len, x_max)
-        if (s_end <= s_start) next
-        alpha <- 0.05 + 0.05 * k     # 0.10 -> 0.25 progressivo
-        base_shapes <- c(base_shapes, list(
-          list(type = "rect", xref = "x", yref = "paper",
-               x0 = s_start, x1 = s_end, y0 = 0, y1 = 1,
-               fillcolor = sprintf("rgba(120,120,120,%.3f)", alpha),
-               line = list(width = 0), layer = "below")
-        ))
-      }
-    }
+    # Round 9: bande grigie di incertezza RIMOSSE — confondevano l'occhio,
+    # facevano sembrare che il grafico avesse uno sfondo grigio. La perdita
+    # di affidabilita' del forecast si capisce gia' dalla riga tratteggiata
+    # arancione "fine forecast" e dal ventaglio ensemble.
 
     # Marker fioritura piena (giorno con max floweringRateAct)
     flo_peak_date <- NULL
@@ -935,13 +1429,15 @@ function(input, output, session) {
     if (has_env && "irrigation_p50" %in% names(env)) {
       p1 <- p1 |>
         add_trace(x = env$DATE, y = env$irrigation_p50,
-                  type = "bar", name = "Irrig. mediana storica (mm)",
+                  type = "bar", name = "Irrig. storica mediana",
                   marker = list(color = "rgba(229,57,53,0.30)",
                                 line = list(width = 0)),
                   yaxis = "y2", opacity = 0.85,
                   hovertemplate = "Irrig. storica mediana: %{y:.0f} mm<extra></extra>",
                   inherit = FALSE)
     }
+    # Round 12: barre "Irrig. previste oltre 16gg" RIMOSSE — duplicate
+    # con cur$irrigation che ora copre tutta la stagione (weather esteso).
     if (has_cur) {
       # Ordine traces studiato per VISIBILITA':
       #  1) Canopy con fill TENUE (alpha 0.18) sotto tutto.
@@ -973,11 +1469,15 @@ function(input, output, session) {
         if (!is.finite(flo_max_loc) || flo_max_loc <= 0) flo_max_loc <- 1
         flo_norm <- pmin(flo_y / flo_max_loc, 1)        # 0..1
         flo_disp <- flo_norm * FLO_SCALE                # 0..80
+        # Round 11: fiore di pomodoro = GIALLO (non rosa).
         p1 <- p1 |>
           add_trace(x = cur$DATE, y = flo_disp,
                     type = "scatter", mode = "lines",
-                    name = "🌸 Fioritura (campana)",
-                    line = list(color = "#e91e63", width = 3),
+                    name = "🌼 Fioritura",
+                    line = list(color = "#fbc02d", width = 3.5,
+                                shape = "spline", smoothing = 1),
+                    fill = "tozeroy",
+                    fillcolor = "rgba(255, 193, 7, 0.25)",
                     customdata = flo_norm,
                     hovertemplate = "Fioritura: %{customdata:.2f} (norm.)<extra></extra>",
                     inherit = FALSE)
@@ -990,13 +1490,35 @@ function(input, output, session) {
                   line = list(color = "#6a1b9a", width = 2.8),
                   hovertemplate = "Yield: %{y:.1f} t/ha<extra></extra>",
                   inherit = FALSE) |>
-        # Brix (rosso) — *6 per essere ben visibile (Brix da 0 a ~15)
-        add_trace(x = cur$DATE, y = cur$brixAct * BRIX_SCALE,
-                  type = "scatter", mode = "lines+markers",
-                  name = "🍯 Brix ×6 (Brix °)",
-                  line   = list(color = "#c62828", width = 2.6),
-                  marker = list(color = "#c62828", size = 4),
-                  customdata = cur$brixAct,
+        # Brix (rosso) — Round 7: il run deterministico (cur) ha brix=0
+        # per quasi tutto il ciclo (il modello calcola brix solo a maturita',
+        # vedi BRIX_model in Main.R). Per dare all'agricoltore un'idea della
+        # CURVA di brix completa, sostituiamo cur$brixAct con la mediana
+        # ensemble (env_ens$brixAct_p50) che proietta tutta la stagione fino
+        # al raccolto. Pre-flowering resta 0 (corretto).
+        # Fall-back: se ensemble non c'e', usiamo cur$brixAct.
+        # Round 17: usa brixAct_calc (calcolato manualmente da
+        # carbonSugarState / fruitFreshWeightAct, vedi current_run).
+        add_trace(x = cur$DATE,
+                  y = {
+                    bx <- if ("brixAct_calc" %in% names(cur))
+                            as.numeric(cur$brixAct_calc)
+                          else as.numeric(cur$brixAct)
+                    bx[!is.finite(bx)] <- 0
+                    bx * BRIX_SCALE
+                  },
+                  type = "scatter", mode = "lines",
+                  name = "🍯 Brix (×6, °)",
+                  line = list(color = "#c62828", width = 3,
+                              shape = "spline", smoothing = 1),
+                  connectgaps = TRUE,
+                  customdata = {
+                    bx <- if ("brixAct_calc" %in% names(cur))
+                            as.numeric(cur$brixAct_calc)
+                          else as.numeric(cur$brixAct)
+                    bx[!is.finite(bx)] <- 0
+                    bx
+                  },
                   hovertemplate = "Brix: %{customdata:.2f}°<extra></extra>",
                   inherit = FALSE) |>
         # Pioggia EFFICACE (>= 10 mm) — bars on y2.
@@ -1066,11 +1588,15 @@ function(input, output, session) {
       }
     }
 
+    # Round 11: titoli asse Y CORTI per non sovrapporsi. Le scale sono
+    # gia' chiare dalla legenda; il titolo dice solo "scala unificata".
     p1 <- p1 |> layout(
-      yaxis  = list(title = paste("Canopy % | Yield t/ha | Brix ×6 | Fioritura ×80",
-                                  "(scale per visibilita')"),
+      yaxis  = list(title = list(text = "scala (vedi legenda)",
+                                 font = list(size = 10, color = "#999"),
+                                 standoff = 6),
                     range = c(0, 150), zeroline = TRUE),
-      yaxis2 = list(title = "Pioggia / Irrigazione (mm/giorno)",
+      yaxis2 = list(title = list(text = "mm/giorno",
+                                 font = list(size = 10, color = "#999")),
                     overlaying = "y",
                     side = "right", showgrid = FALSE,
                     range = c(0, 50)),
@@ -1082,20 +1608,19 @@ function(input, output, session) {
     # Asse 0..100 (% di acqua disponibile nel suolo). Niente "FTSW".
     # Sovrapposto: water stress come "stress %" (linea rossa, 0=ok, 100=stress).
     # Tre soglie per fase fenologica disegnate solo durante la fase relativa.
+    # Round 13: tolta linea tratteggiata mediana proiezione (ridondante).
+    # Resta solo il ribbon storico P10-P90 sotto.
     p2 <- plot_ly() |>
       add_ribbon("ftsw", "rgba(63,81,181,0.18)", "#3949ab",
-                 "Acqua nel suolo storico", scale = 100) |>
-      add_ens_fan("ftsw", "rgba(0,131,143,0.18)", "#00838f",
-                  "Acqua nel suolo", scale = 100)
+                 "Acqua nel suolo storico", scale = 100)
 
     if (has_cur && "ftsw" %in% names(cur)) {
+      # Round 19: SOLO linea, no fill (l'utente ha chiesto "linea non area")
       p2 <- p2 |>
         add_trace(x = cur$DATE, y = cur$ftsw * 100,
                   type = "scatter", mode = "lines",
                   name = "💧 Acqua nel suolo (%)",
                   line = list(color = "#1565c0", width = 2.6),
-                  fill = "tozeroy",
-                  fillcolor = "rgba(33,150,243,0.18)",
                   customdata = cur$ftsw,
                   hovertemplate = "Acqua nel suolo: %{y:.0f}%<extra></extra>",
                   inherit = FALSE)
@@ -1157,24 +1682,32 @@ function(input, output, session) {
         y0 = stress_pct_threshold, y1 = stress_pct_threshold,
         line = list(color = color, width = 2.2, dash = "dash")
       )
+      # Round 17: label SOLO icona+nome breve, posta sull'INIZIO del
+      # segmento (non al centro), font 9, no soglia (rumore).
       ann <- list(
-        x = x0 + as.integer(x1 - x0) / 2,
-        y = stress_pct_threshold + 5,
+        x = x0 + 1L,
+        y = stress_pct_threshold + 4,
         xref = "x", yref = "y",
-        text = sprintf("%s · soglia stress %.0f%%", label,
-                       stress_pct_threshold),
+        text = label,
         showarrow = FALSE,
-        font = list(size = 10, color = color),
-        bgcolor = "rgba(255,255,255,0.85)"
+        font = list(size = 9, color = color),
+        bgcolor = "rgba(255,255,255,0.92)",
+        borderpad = 1, xanchor = "left"
       )
       list(shape = shp, ann = ann)
     }
 
-    seg_v <- phase_threshold_segment(2L, as.numeric(input$ws_veg),
+    # Round 12: FIX phenoCode mapping. Il modello cumba usa
+    #   phenoCode = 0 (pre-trapianto)
+    #   phenoCode = 1 -> VEGETATIVA
+    #   phenoCode = 2 -> RIPRODUTTIVA
+    #   phenoCode = 3 -> RIPENING / MATURAZIONE
+    # Prima cercavo 2,3,4: la maturazione non veniva MAI disegnata.
+    seg_v <- phase_threshold_segment(1L, as.numeric(input$ws_veg),
                                      "#43a047", "🌱 Vegetativa")
-    seg_r <- phase_threshold_segment(3L, as.numeric(input$ws_rep),
+    seg_r <- phase_threshold_segment(2L, as.numeric(input$ws_rep),
                                      "#1e88e5", "🌸 Riproduttiva")
-    seg_p <- phase_threshold_segment(4L, as.numeric(input$ws_rip),
+    seg_p <- phase_threshold_segment(3L, as.numeric(input$ws_rip),
                                      "#fb8c00", "🍅 Maturazione")
     for (s in list(seg_v, seg_r, seg_p)) {
       if (!is.null(s)) {
@@ -1184,20 +1717,36 @@ function(input, output, session) {
     }
 
     p2 <- p2 |> layout(
-      yaxis  = list(title = "Acqua nel suolo / Stress idrico (%)",
+      yaxis  = list(title = list(text = "% acqua / stress",
+                                  font = list(size = 10, color = "#999"),
+                                  standoff = 6),
                     range = c(0, 105), zeroline = TRUE),
       shapes = p2_shapes,
       annotations = p2_anns
     )
 
-    # ============== Stitch panels (SOLO 2) ===============================
+    # ============== Stitch panels (Round 6 layout fix) ===================
+    # Round 6: i titoli paper-coords si sovrapponevano ai dati. Sposto tutto
+    # nel margine superiore con `t = 90` e uso un titolo unico in alto +
+    # un titolo sopra il pannello 2 a y = 0.46. Aggiungo bgcolor bianco ai
+    # titoli per non sovrapporsi alle linee del grafico.
     sp <- subplot(p1, p2, nrows = 2, shareX = TRUE, titleY = TRUE,
                   heights = c(0.55, 0.45)) |>
-      layout(legend = list(orientation = "h", y = -0.10,
-                           font = list(size = 10)),
-             margin = list(l = 55, r = 55, t = 28, b = 50),
+      layout(paper_bgcolor = "#ffffff",
+             plot_bgcolor  = "#ffffff",
+             # Round 8: legenda ORIZZONTALE in basso, font piu' grande.
+             legend = list(orientation = "h",
+                           x = 0.5, y = -0.22, xanchor = "center",
+                           font = list(size = 12, color = "#222"),
+                           bgcolor = "rgba(255,255,255,0.95)",
+                           bordercolor = "#cfd8dc", borderwidth = 1,
+                           itemsizing = "constant"),
+             # Round 8: margine sinistro 75 cosi' i tick y non si
+             # sovrappongono ai titoli; margine top 100 per i titoli
+             # del pannello 1.
+             margin = list(l = 75, r = 30, t = 100, b = 100),
              hovermode = "x unified",
-             # Asse X: date sempre visibili, tick mensili, formato giorno+mese
+             hoverlabel = list(font = list(size = 12)),
              xaxis = list(range = c(x_min, x_max),
                           title = "",
                           type = "date",
@@ -1210,7 +1759,23 @@ function(input, output, session) {
                           ticklen = 5))
 
     fan_lbl <- if (has_ens) " | inizio ventaglio" else ""
+    # Round 8: titoli ben FUORI dalle aree dati. Pannello 1 a y=1.18
+    # (dentro al margin top di 100px), pannello 2 a y=0.46 (fuori
+    # dall'area dei dati, sopra al gap tra pannelli). Marker oggi/fine
+    # forecast a y=1.05.
     top_anns <- list(
+      list(x = 0, y = 1.18, xref = "paper", yref = "paper",
+           text = "<b>🌿 Crescita: canopy, yield, fioritura, brix</b>",
+           showarrow = FALSE,
+           font = list(size = 14, color = "#2e7d32"),
+           xanchor = "left"),
+      list(x = 0, y = 0.46, xref = "paper", yref = "paper",
+           text = "<b>💧 Acqua nel suolo + stress idrico</b>",
+           showarrow = FALSE,
+           font = list(size = 13, color = "#1565c0"),
+           xanchor = "left",
+           bgcolor = "rgba(255,255,255,0.97)",
+           borderpad = 3),
       list(x = today, y = 1.04, xref = "x", yref = "paper",
            text = "oggi", showarrow = FALSE,
            font = list(size = 10, color = "#2e7d32"), xanchor = "center"),
@@ -1220,9 +1785,9 @@ function(input, output, session) {
     )
     if (!is.null(flo_peak_date)) {
       top_anns <- c(top_anns, list(list(
-        x = flo_peak_date, y = 1.04, xref = "x", yref = "paper",
-        text = "🌸 fioritura piena", showarrow = FALSE,
-        font = list(size = 10, color = "#f9a825"), xanchor = "center")))
+        x = flo_peak_date, y = 1.06, xref = "x", yref = "paper",
+        text = "🌻 fioritura piena", showarrow = FALSE,
+        font = list(size = 10, color = "#fbc02d"), xanchor = "center")))
     }
     sp <- sp |> layout(annotations = top_anns)
 
@@ -1236,87 +1801,110 @@ function(input, output, session) {
   # date/mm non si resettano ogni volta che le override cambiano.
   output$irrigation_feedback_rows <- renderUI({
     cur <- current_run()
-    if (is.null(cur) || !nrow(cur)) {
-      return(div(class = "irrf-row empty",
-                 em("In attesa dei dati di simulazione...")))
-    }
+    # Round 6: durante il ricalcolo current_run() puo' tornare NULL per un
+    # istante. Usiamo req(..., cancelOutput=TRUE) cosi' il render NON resetta
+    # la lista a "In attesa": Shiny lascia visibile l'ultima versione valida.
+    req(cur, !is.null(cur) && nrow(cur) > 0, cancelOutput = TRUE)
 
     today <- Sys.Date()
     ovr   <- irr_overrides()
 
-    # Date consigliate dal modello (in ordine cronologico)
-    rec_idx   <- which(cur$irrigation > 0)
-    rec_dates <- as.Date(cur$DATE[rec_idx])
-    rec_mm    <- as.numeric(cur$irrigation[rec_idx])
+    # Round 18: italianizza date
+    mesi_it <- c("Gen","Feb","Mar","Apr","Mag","Giu",
+                 "Lug","Ago","Set","Ott","Nov","Dic")
+    gg_it <- c("Dom","Lun","Mar","Mer","Gio","Ven","Sab")
+    fmt_it <- function(d) sprintf("%s %d %s",
+                                  gg_it[as.POSIXlt(d)$wday + 1L],
+                                  as.integer(format(d, "%d")),
+                                  mesi_it[as.integer(format(d, "%m"))])
 
-    # Costruisci righe: prima "consigliate", poi "applicate manualmente"
-    rows <- list()
+    # Round 18: assemblo lista UNICA di eventi (consigliate + applicate +
+    # skip "fantasma") ORDINATA cronologicamente, cosi' l'agricoltore vede
+    # tutto in linea temporale.
+    events <- list()
 
-    # --- Consigliate ---------------------------------------------------
-    for (i in seq_along(rec_dates)) {
-      d   <- rec_dates[i]
+    # 1) Consigliate dal modello
+    rec_idx <- which(cur$irrigation > 0)
+    for (i in seq_along(rec_idx)) {
+      d   <- as.Date(cur$DATE[rec_idx[i]])
       key <- format(d, "%Y-%m-%d")
-      mm  <- rec_mm[i]
+      mm  <- as.numeric(cur$irrigation[rec_idx[i]])
       is_skipped <- !is.null(ovr[[key]]) && identical(ovr[[key]]$action, "skip")
-      is_past    <- d < today
-      cls_extra  <- if (is_skipped) "skipped"
-                    else if (is_past) "suggested past"
-                    else "suggested"
-      # Etichetta temporale
-      tag_txt <- if (is_skipped) "saltata"
-                 else if (is_past) sprintf("consigliata %d gg fa",
-                                           as.integer(today - d))
-                 else if (d == today) "consigliata OGGI"
-                 else sprintf("consigliata fra %d gg",
-                              as.integer(d - today))
-      # Bottone azione (skip <-> undo)
-      if (is_skipped) {
-        btn <- tags$button(class = "irrf-act btn-undo",
-                           `data-act` = "undo-skip",
-                           `data-date` = key,
-                           "↩ ripristina")
-      } else {
-        btn <- tags$button(class = "irrf-act btn-skip",
-                           `data-act` = "skip",
-                           `data-date` = key,
-                           "✕ salto")
-      }
-      rows <- c(rows, list(
-        div(class = paste("irrf-row", cls_extra),
-            div(class = "irrf-date", format(d, "%a %d %b")),
-            div(class = "irrf-mm",   sprintf("%.0f mm", mm)),
-            div(class = "irrf-tag",  tag_txt),
-            div(class = "irrf-actions", btn))
-      ))
+      events[[length(events) + 1L]] <- list(
+        date = d, key = key, mm = mm,
+        type = if (is_skipped) "skipped" else "suggested"
+      )
     }
 
-    # --- Applicate manualmente ----------------------------------------
+    # 2) Applicate manualmente
     applied_keys <- names(ovr)[vapply(ovr,
                                       function(x) identical(x$action, "applied"),
                                       logical(1))]
-    if (length(applied_keys)) {
-      applied_keys <- applied_keys[order(as.Date(applied_keys))]
-      for (key in applied_keys) {
-        d  <- as.Date(key)
-        mm <- as.numeric(ovr[[key]]$mm)
-        rows <- c(rows, list(
-          div(class = "irrf-row applied",
-              div(class = "irrf-date", format(d, "%a %d %b")),
-              div(class = "irrf-mm",   sprintf("%.0f mm", mm)),
-              div(class = "irrf-tag",  "fatta dall'agricoltore"),
-              div(class = "irrf-actions",
-                  tags$button(class = "irrf-act btn-remove",
-                              `data-act` = "remove-applied",
-                              `data-date` = key,
-                              "🗑")))
-        ))
-      }
+    for (key in applied_keys) {
+      events[[length(events) + 1L]] <- list(
+        date = as.Date(key), key = key,
+        mm = as.numeric(ovr[[key]]$mm %||% 0), type = "applied"
+      )
     }
 
-    # Riga vuota se non c'e' niente da mostrare
+    # 3) Skip "fantasma" — date saltate dall'agricoltore ma che il modello
+    # non consiglia piu' (perche' ha ricalcolato dopo lo skip). L'utente
+    # deve poterli vedere e ripristinare.
+    skip_keys <- names(ovr)[vapply(ovr,
+                                   function(x) identical(x$action, "skip"),
+                                   logical(1))]
+    seen_skip <- vapply(events,
+                        function(e) e$type == "skipped" && e$key %in% skip_keys,
+                        logical(1))
+    seen_skip_keys <- if (length(seen_skip) && any(seen_skip))
+                        vapply(events[seen_skip], function(e) e$key,
+                               character(1))
+                      else character(0)
+    ghost_skips <- setdiff(skip_keys, seen_skip_keys)
+    for (key in ghost_skips) {
+      events[[length(events) + 1L]] <- list(
+        date = as.Date(key), key = key, mm = 0, type = "ghost_skip"
+      )
+    }
+
+    # Ordina cronologicamente
+    if (length(events)) {
+      ord <- order(vapply(events, function(e) as.numeric(e$date), numeric(1)))
+      events <- events[ord]
+    }
+
+    rows <- lapply(events, function(e) {
+      d <- e$date; key <- e$key; mm <- e$mm; type <- e$type
+      is_past <- d < today
+      cls <- switch(type,
+        "suggested" = if (is_past) "suggested past" else "suggested",
+        "skipped"   = "skipped",
+        "applied"   = "applied",
+        "ghost_skip" = "skipped ghost"
+      )
+      btn <- switch(type,
+        "suggested"  = tags$button(class = "irrf-act btn-skip",
+                                   `data-act` = "skip",
+                                   `data-date` = key, "✕ salto"),
+        "skipped"    = tags$button(class = "irrf-act btn-undo",
+                                   `data-act` = "undo-skip",
+                                   `data-date` = key, "↩ ripristina"),
+        "ghost_skip" = tags$button(class = "irrf-act btn-undo",
+                                   `data-act` = "undo-skip",
+                                   `data-date` = key, "↩ annulla"),
+        "applied"    = tags$button(class = "irrf-act btn-remove",
+                                   `data-act` = "remove-applied",
+                                   `data-date` = key, "🗑")
+      )
+      div(class = paste("irrf-row", cls),
+          div(class = "irrf-date", fmt_it(d)),
+          div(class = "irrf-mm",   sprintf("%.0f mm", mm)),
+          div(class = "irrf-actions", btn))
+    })
+
     if (!length(rows)) {
       rows <- list(div(class = "irrf-row empty",
-                       em("Nessuna irrigazione consigliata in questa stagione.")))
+                       em("Nessuna irrigazione in questa stagione.")))
     }
 
     do.call(tagList, rows)
@@ -1342,7 +1930,7 @@ function(input, output, session) {
       cnt <- tapply(h$irrigation > 0, h$year, sum, na.rm = TRUE)
       pct_today <- ftsw_percentile_today(cur, h, today)
       pct_line <- if (is.finite(pct_today))
-        sprintf("- FTSW oggi vs storico stesso DOY: percentile %.0f%% (0=piu' secco di tutti, 100=piu' umido).\n",
+        sprintf("- Acqua nel suolo oggi vs storico stesso DOY: percentile %.0f%% (0=piu' secco di tutti, 100=piu' umido).\n",
                 pct_today * 100) else ""
       hist_summary <- paste0(sprintf(
         "- Storico (%d anni): yield mediano %.1f t/ha (P10=%.1f, P90=%.1f); brix %.2f; irrig. mediana %.0f mm in %.0f interventi.\n",
@@ -1464,14 +2052,24 @@ saltato/aggiunto irrigazioni, commenta brevemente la sua scelta.",
   run_llm <- function() {
     summary_text <- build_llm_summary()
     llm_state(list(status = "loading", note = NULL, diag = NULL))
+    # Round 12: log diagnostico per capire perche' va in fallback
+    key_present <- nzchar(Sys.getenv("OPENROUTER_API_KEY", ""))
+    message(sprintf("[run_llm] OPENROUTER_API_KEY %s",
+                    if (key_present) "presente"
+                    else "ASSENTE -> fallback rule-based"))
     withProgress(message = "🤖 CUMBA sta pensando...", value = 0.4, {
       txt <- tryCatch(interpret_with_claude(summary_text, language = input$language),
                       error = function(e) {
+                        message("[run_llm] interpret_with_claude ERRORE: ",
+                                conditionMessage(e))
                         structure(sprintf("Errore di rete: %s", conditionMessage(e)),
                                   class = c("cumba_llm_err", "character"))
                       })
       setProgress(1)
     })
+    message(sprintf("[run_llm] risposta inherits(cumba_llm_err)=%s, nchar=%d",
+                    inherits(txt, "cumba_llm_err"),
+                    if (is.null(txt)) 0L else nchar(as.character(txt))))
 
     # Determina se la risposta e' un errore. Il nostro interpret_with_llm
     # marca i fallimenti con classe "cumba_llm_err"; come safety net usa
@@ -1527,6 +2125,18 @@ saltato/aggiunto irrigazioni, commenta brevemente la sua scelta.",
   observeEvent(current_run_d(), {
     if (isTRUE(input$autoLLM) && !is.null(current_run_d())) run_llm()
   }, ignoreNULL = TRUE)
+
+  # Round 5: pulse del bottone "🤖 CUMBA ti spiega" quando arriva un nuovo
+  # messaggio (sia LLM che fallback). Si spegne quando l'utente apre il modal.
+  observeEvent(llm_text(), {
+    if (!is.null(llm_text()))
+      session$sendCustomMessage("cumba_llm_pulse", TRUE)
+  }, ignoreNULL = TRUE)
+  observeEvent(input$llm_modal_open, {
+    a <- input$llm_modal_open
+    if (isTRUE(a$open))
+      session$sendCustomMessage("cumba_llm_pulse", FALSE)
+  }, ignoreInit = TRUE)
 
   output$interpretation_text <- renderUI({
     txt <- llm_text()

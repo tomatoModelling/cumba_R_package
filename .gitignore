@@ -2,3 +2,7 @@
 .Rproj.user
 .RData
 inst/doc
+# Secret / credenziali — non committare MAI
+shinyApp/openrouter_key.txt
+openrouter_key.txt
+.Renviron

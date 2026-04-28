@@ -15,16 +15,27 @@ suppressPackageStartupMessages({
 })
 
 # --- CUMBA loading --------------------------------------------------------
-# Always prefer the working source when running from the package directory
-# (so phase-specific waterStressLevel/minimumTurn changes are picked up
-# without re-installing).
+# Round 15: SEMPRE forza load_all (ricarica i sorgenti R/Main.R) cosi' le
+# modifiche al modello (es. branch override) sono attive ad ogni runApp,
+# senza serve re-install del pacchetto.
 .pkg_root <- normalizePath("..", mustWork = FALSE)
 .in_pkg <- file.exists(file.path(.pkg_root, "DESCRIPTION")) &&
            file.exists(file.path(.pkg_root, "R", "Main.R"))
 
 if (.in_pkg && requireNamespace("devtools", quietly = TRUE)) {
-  message("Loading cumba from source via devtools::load_all('..')")
-  suppressMessages(devtools::load_all(.pkg_root, quiet = TRUE))
+  message("[global.R] Loading cumba via devtools::load_all('", .pkg_root, "') ",
+          "— ricaricamento FORZATO dei sorgenti R/Main.R")
+  # reset = TRUE forza re-caricamento di tutti i file R/, anche se gia'
+  # caricati in una sessione precedente (es. dopo edit a Main.R).
+  suppressMessages(devtools::load_all(.pkg_root, quiet = TRUE, reset = TRUE))
+  # Verifica firma di cumba_scenario per essere sicuri che la versione
+  # caricata abbia il parametro irrigationOverride (Round 5+).
+  if (!"irrigationOverride" %in% names(formals(cumba::cumba_scenario))) {
+    warning("[global.R] cumba_scenario NON ha il parametro irrigationOverride! ",
+            "Versione vecchia caricata. Riavvia R completamente.")
+  } else {
+    message("[global.R] cumba_scenario versione OK (irrigationOverride supportato)")
+  }
 } else {
   loaded <- tryCatch(
     { suppressMessages(library(cumba)); TRUE },
@@ -35,6 +46,48 @@ if (.in_pkg && requireNamespace("devtools", quietly = TRUE)) {
 }
 
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
+
+# --- Round 19: Pedotransfer tipo di suolo -> FieldCapacity / WiltingPoint --
+# Valori volumetrici tipici (0..1) per i 3 tessiture principali (Saxton &
+# Rawls 2006, valori medi). L'utente sceglie il tipo nell'header e i
+# parametri del modello vengono aggiornati in build_param_df.
+.SOIL_TYPES <- list(
+  "sandy" = list(label = "Sabbioso",   FieldCapacity = 0.18, WiltingPoint = 0.08),
+  "loam"  = list(label = "Limoso",     FieldCapacity = 0.30, WiltingPoint = 0.13),
+  "clay"  = list(label = "Argilloso",  FieldCapacity = 0.40, WiltingPoint = 0.22)
+)
+.SOIL_CHOICES <- setNames(names(.SOIL_TYPES),
+                          vapply(.SOIL_TYPES, `[[`, character(1), "label"))
+
+# --- LLM API key bootstrap -----------------------------------------------
+# Strategia di lettura della OPENROUTER_API_KEY (in ordine):
+#   1) Variabile d'ambiente OPENROUTER_API_KEY (preferita; usabile sui
+#      piani Standard+ di shinyapps.io o in locale via ~/.Renviron).
+#   2) File 'openrouter_key.txt' nella stessa cartella di global.R
+#      (DEVE essere in .gitignore — usato sul free tier di shinyapps.io
+#      che NON supporta env vars custom).
+# Se nessuna delle due e' impostata, l'app cade sul fallback rule-based
+# (synth_message) e mostra una pill "REGOLE".
+.bootstrap_llm_key <- function() {
+  if (nzchar(Sys.getenv("OPENROUTER_API_KEY", ""))) return(invisible(TRUE))
+  here <- tryCatch(dirname(sys.frame(1L)$ofile), error = function(e) ".")
+  if (is.null(here) || is.na(here) || !nzchar(here)) here <- "."
+  cands <- c(file.path(here, "openrouter_key.txt"),
+             "openrouter_key.txt",
+             "shinyApp/openrouter_key.txt")
+  for (f in cands) {
+    if (file.exists(f)) {
+      k <- trimws(readLines(f, warn = FALSE, n = 1L))
+      if (nzchar(k)) {
+        Sys.setenv(OPENROUTER_API_KEY = k)
+        message("OPENROUTER_API_KEY caricata da ", f)
+        return(invisible(TRUE))
+      }
+    }
+  }
+  invisible(FALSE)
+}
+.bootstrap_llm_key()
 
 # --- Costanti agronomiche -------------------------------------------------
 # Soglia oltre cui un giorno e' considerato "piovoso" agronomicamente:
@@ -63,6 +116,33 @@ fill_with_avg <- function(x) {
 }
 
 build_param_df <- function(input) {
+  # Round 7: GUARD — se il modal Avanzate non e' mai stato aperto, gli
+  # slider potrebbero non essere ancora inizializzati e input$XXX = NULL.
+  # In tal caso usiamo i default agronomici di tomatoFoggia (parametri
+  # calibrati). Cosi' la simulazione PARTE subito dopo il click sulla
+  # mappa, anche se l'utente non ha mai aperto il pannello Avanzate.
+  v <- function(x, fallback) if (is.null(x) || length(x) == 0L) fallback else x
+  TGro    <- v(input$TGro,    c(10, 35))
+  Topt    <- v(input$Topt,    24)
+  TStress <- v(input$TStress, c(5, 45))
+  RUE     <- v(input$RUE,     2.8)
+  CycleLength       <- v(input$CycleLength, 1216)
+  LightInterception <- v(input$LightInterception, c(0.001, 0.9))
+  TransFloLag <- v(input$TransFloLag, c(9, 30))
+  GrowthSenescenceCanopy <- v(input$GrowthSenescenceCanopy, c(19, 113))
+  Kc <- v(input$Kc, c(0.3, 1.15))
+  RootIncrease <- v(input$RootIncrease, 0.55)
+  RootDepth    <- v(input$RootDepth,    c(4, 60))
+  DepletionFraction      <- v(input$DepletionFraction, 0.5)
+  SoilWaterInitial       <- v(input$SoilWaterInitial, 0.5)
+  WaterStressSensitivity <- v(input$WaterStressSensitivity, 3)
+  FloweringSlope <- v(input$FloweringSlope, 0.5)
+  FloweringMax   <- v(input$FloweringMax,   80)
+  k0 <- v(input$k0, 4)
+  FruitWaterContent <- v(input$FruitWaterContent, c(0.8, 0.95))
+  FruitWaterContentInc <- v(input$FruitWaterContentInc, 0.01)
+  FruitWaterContentDecreaseMax <- v(input$FruitWaterContentDecreaseMax, 0.01)
+
   data.frame(
     Parameter = c("Tbase","Topt","Tmax","Theat","Tcold",
                   "FIntMax","CycleLength","TransplantingLag","FloweringLag",
@@ -74,19 +154,31 @@ build_param_df <- function(input) {
                   "FloweringSlope","FloweringMax",
                   "k0","FruitWaterContentMin","FruitWaterContentMax",
                   "FruitWaterContentInc","FruitWaterContentDecreaseMax"),
-    Value = c(input$TGro[[1]], input$Topt, input$TGro[[2]],
-              input$TStress[[2]], input$TStress[[1]],
-              input$LightInterception[[2]], input$CycleLength,
-              input$TransFloLag[[1]], input$TransFloLag[[2]],
-              input$GrowthSenescenceCanopy[[1]], input$GrowthSenescenceCanopy[[2]],
-              input$LightInterception[[1]],
-              input$RUE, input$Kc[[1]], input$Kc[[2]],
-              input$RootIncrease, input$RootDepth[[2]], input$RootDepth[[1]],
-              0.3, 0.1, input$DepletionFraction,
-              input$SoilWaterInitial, input$WaterStressSensitivity,
-              input$FloweringSlope, input$FloweringMax,
-              input$k0, input$FruitWaterContent[[1]], input$FruitWaterContent[[2]],
-              input$FruitWaterContentInc, input$FruitWaterContentDecreaseMax),
+    Value = c(TGro[[1]], Topt, TGro[[2]],
+              TStress[[2]], TStress[[1]],
+              LightInterception[[2]], CycleLength,
+              TransFloLag[[1]], TransFloLag[[2]],
+              GrowthSenescenceCanopy[[1]], GrowthSenescenceCanopy[[2]],
+              LightInterception[[1]],
+              RUE, Kc[[1]], Kc[[2]],
+              RootIncrease, RootDepth[[2]], RootDepth[[1]],
+              # Round 19: FieldCapacity / WiltingPoint dal tipo di suolo
+              # selezionato dall'utente (input$soilType). Default loam.
+              {
+                st <- input$soilType %||% "loam"
+                if (!is.null(.SOIL_TYPES[[st]])) .SOIL_TYPES[[st]]$FieldCapacity
+                else 0.30
+              },
+              {
+                st <- input$soilType %||% "loam"
+                if (!is.null(.SOIL_TYPES[[st]])) .SOIL_TYPES[[st]]$WiltingPoint
+                else 0.13
+              },
+              DepletionFraction,
+              SoilWaterInitial, WaterStressSensitivity,
+              FloweringSlope, FloweringMax,
+              k0, FruitWaterContent[[1]], FruitWaterContent[[2]],
+              FruitWaterContentInc, FruitWaterContentDecreaseMax),
     stringsAsFactors = FALSE
   ) |> pivot_wider(names_from = Parameter, values_from = Value)
 }
@@ -326,12 +418,22 @@ reverse_geocode_nominatim <- function(lat, lon, lang = "it",
 # (verifica/aggiorna su openrouter.ai/models?supported_parameters=tools&pricing=free).
 .LLM_FALLBACKS <- unique(c(
   .LLM_MODEL,
+  # Round 14: lista AMPIA per resilienza ai 404/429. Mix di modelli
+  # OpenRouter :free di diversi provider (Meta, DeepSeek, Google, Qwen,
+  # Mistral, NVIDIA), cosi' se uno e' rate-limited o dismesso si va al
+  # successivo. Verifica corrente: openrouter.ai/models?max_price=0
   "meta-llama/llama-3.3-70b-instruct:free",
-  "deepseek/deepseek-chat-v3.1:free",
-  "google/gemini-2.0-flash-exp:free",
-  "nvidia/llama-3.1-nemotron-70b-instruct:free",
+  "deepseek/deepseek-r1:free",
+  "deepseek/deepseek-chat-v3-0324:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+  "qwen/qwen3-235b-a22b:free",
+  "google/gemma-3-27b-it:free",
+  "google/gemma-2-9b-it:free",
   "mistralai/mistral-small-3.1-24b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free"
+  "mistralai/mistral-nemo:free",
+  "nvidia/llama-3.1-nemotron-70b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "meta-llama/llama-3.1-8b-instruct:free"
 ))
 
 # Risolve la chiave provando in ordine LLM_API_KEY, OPENROUTER_API_KEY,
@@ -383,8 +485,10 @@ reverse_geocode_nominatim <- function(lat, lon, lang = "it",
     err <- if (!is.null(parsed$error$message)) parsed$error$message
            else if (!is.null(parsed$message))  parsed$message
            else httr2::resp_body_string(resp)
-    # 429 (rate limit) e 5xx -> proveremo il prossimo modello
-    retryable <- status == 429L || status >= 500L
+    # Round 15: retryable = 429 (rate limit), 5xx (server), 404 (modello
+    # dismesso). Cosi' se "deepseek-chat-v3.1" e' scomparso, proviamo il
+    # successivo invece di fermarci.
+    retryable <- status == 429L || status >= 500L || status == 404L
     return(list(ok = FALSE, status = status, retryable = retryable,
                 err = substr(err, 1, 400)))
   }
@@ -417,7 +521,7 @@ interpret_with_llm <- function(summary_text, language = "italiano") {
 
   system_msg <- paste(
     "Sei un agronomo amico dell'agricoltore di pomodoro da industria.",
-    "Hai risultati CUMBA (canopy, yield previsto, brix, stress idrico, FTSW,",
+    "Hai risultati CUMBA (canopy, yield previsto, brix, stress idrico, acqua nel suolo,",
     "fioritura, irrigazioni consigliate, forecast meteo, ensemble di analoghi storici).",
     "Spiega in 4-5 frasi corte, calde e CONCRETE: 1) come sta il campo OGGI",
     "vs anni passati; 2) cosa fare nei prossimi giorni; 3) eventualmente UNA",
@@ -558,27 +662,30 @@ today_action <- function(cur, om, transplantingDOY, depletionFraction = 30,
 
   base <- list(phase = phase_lbl, phase_icon = phase_icon)
 
+  # Round 5: niente "FTSW" nelle stringhe. Usiamo "Acqua nel suolo" come
+  # percentuale (0..100%) e "stress idrico" come percentuale 0=ok, 100=max.
+  acqua_pct   <- ftsw_today * 100
+  stress_pct  <- (1 - ws_today) * 100
+
   if (irr_today > 0) {
     return(c(list(
       action = "irrigate",
       headline = sprintf("IRRIGA OGGI — %.0f mm", irr_today),
-      detail   = sprintf("FTSW = %.2f (soglia stress = %.2f). Pioggia attesa nei prossimi 3 giorni: %.0f mm.",
-                         ftsw_today, ftsw_threshold, rain_next3),
+      detail   = sprintf("Acqua nel suolo: %.0f%%. Pioggia attesa nei prossimi 3 giorni: %.0f mm.",
+                         acqua_pct, rain_next3),
       color = "#00838f", icon = "💧"
     ), base))
   }
 
-  # rain_next3 e' gia' filtrato a >= .RAIN_DAY_MM per giorno: se vale almeno
-  # una soglia agronomica, la pioggia e' "vera" e sostituisce l'irrigazione.
   if (rain_next3 >= .RAIN_DAY_MM) {
     return(c(list(
       action = "wait_rain",
       headline = sprintf("Aspetta — pioggia attesa: %.0f mm in 3 giorni",
                          rain_next3),
-      detail   = sprintf(paste("FTSW oggi = %.2f. Risparmia l'irrigazione:",
-                               "la pioggia coprira' il fabbisogno (contiamo",
-                               "solo i giorni con >= %.0f mm)."),
-                         ftsw_today, .RAIN_DAY_MM),
+      detail   = sprintf(paste("Acqua nel suolo oggi: %.0f%%.",
+                               "Risparmia l'irrigazione: la pioggia coprira'",
+                               "il fabbisogno (contiamo solo i giorni con >= %.0f mm)."),
+                         acqua_pct, .RAIN_DAY_MM),
       color = "#1565c0", icon = "🌧"
     ), base))
   }
@@ -591,8 +698,8 @@ today_action <- function(cur, om, transplantingDOY, depletionFraction = 30,
       action = "wait_irr",
       headline = sprintf("Prossima irrigazione fra %d giorn%s", days_to,
                          if (days_to == 1L) "o" else "i"),
-      detail   = sprintf("Il %s, ~%.0f mm. Oggi FTSW = %.2f, ancora sopra la soglia (%.2f).",
-                         format(when, "%a %d %b"), mm, ftsw_today, ftsw_threshold),
+      detail   = sprintf("Il %s, ~%.0f mm. Acqua nel suolo oggi: %.0f%%.",
+                         format(when, "%a %d %b"), mm, acqua_pct),
       color = "#388e3c", icon = "✅"
     ), base))
   }
@@ -600,8 +707,8 @@ today_action <- function(cur, om, transplantingDOY, depletionFraction = 30,
   c(list(
     action = "ok",
     headline = "Nessuna irrigazione necessaria a breve",
-    detail   = sprintf("FTSW = %.2f (soglia stress %.2f). Stress idrico attuale: %.2f (0=max stress, 1=opt).",
-                       ftsw_today, ftsw_threshold, 1 - ws_today),
+    detail   = sprintf("Acqua nel suolo: %.0f%%. Stress idrico attuale: %.0f%%.",
+                       acqua_pct, stress_pct),
     color = "#2e7d32", icon = "✅"
   ), base)
 }

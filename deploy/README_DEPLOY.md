@@ -3,6 +3,12 @@
 **Tempo stimato:** ~15 minuti (la prima volta), ~2 minuti per i deploy successivi.
 **Costo:** zero (free tier shinyapps.io = 25 ore-utente al mese).
 
+> ⚡ **TL;DR — primo deploy in 4 mosse**
+> 1. Account su shinyapps.io → Tokens → copia name+token+secret
+> 2. Metti name+token+secret in `~/.Renviron` come `SHINYAPPS_NAME/TOKEN/SECRET`
+> 3. (Opzionale, per LLM) `writeLines("sk-or-...", "shinyApp/openrouter_key.txt")`
+> 4. `source("deploy/deploy_to_shinyapps.R")` → aspetta 5–10 min
+
 ---
 
 ## 1. Prerequisiti (una volta sola)
@@ -78,7 +84,32 @@ A fine deploy si apre il browser su:
 ## 4. Attivare l'LLM (post-deploy, 1 volta)
 
 L'app funziona anche senza LLM (cade su `synth_message()`, regole
-deterministiche). Per attivare CUMBA-ti-spiega:
+deterministiche). Per attivare CUMBA-ti-spiega ci sono **due modi a
+seconda del tuo piano** shinyapps.io:
+
+### 4a. Piano FREE (no env vars custom) → file locale
+
+> Sul piano gratuito di shinyapps.io le **Environment Variables custom
+> non sono disponibili**. Useremo un file locale che viene caricato
+> insieme all'app (e quindi è raggiungibile dal server) ma è in
+> `.gitignore` (quindi NON finisce su GitHub).
+
+1. Crea il file `shinyApp/openrouter_key.txt` (una sola riga).
+   Da R/RStudio:
+   ```r
+   writeLines("sk-or-v1-LATUACHIAVE...", "shinyApp/openrouter_key.txt")
+   ```
+   Oppure aprilo con un editor e incolla solo la chiave.
+2. Verifica che `.gitignore` contenga già `shinyApp/openrouter_key.txt`
+   (lo fa già lo script di setup di Round 5).
+3. Lancia di nuovo `source("deploy/deploy_to_shinyapps.R")`. Il file
+   verrà incluso nel bundle e `global.R` lo legge in automatico via
+   `.bootstrap_llm_key()`.
+4. La chiave è visibile **solo a chi può fare push sul tuo account
+   shinyapps.io** (cioè solo te). Non è esposta agli utenti dell'app
+   (i file `.txt` non sono pubblicati come risorse statiche).
+
+### 4b. Piano STANDARD ($9/mese) → environment variables
 
 1. Vai su <https://www.shinyapps.io/admin/#/applications>.
 2. Clicca sull'app **cumba** → tab **Settings** → sezione
@@ -88,10 +119,12 @@ deterministiche). Per attivare CUMBA-ti-spiega:
    - **Value:** la tua chiave `sk-or-...`
 4. Salva. L'app si riavvia automaticamente.
 
+In entrambi i casi, `global.R` cerca prima la env var, poi il file
+`openrouter_key.txt`. Se trovi nessuna, l'app va in fallback rule-based
+(badge "REGOLE" accanto al titolo).
+
 (Opzionale) Aggiungi anche `LLM_MODEL` se vuoi forzare un modello
-specifico, es. `meta-llama/llama-3.3-70b-instruct:free`. Se non lo
-imposti, viene usato il default codificato in `global.R` con fallback
-automatico su altri modelli free di OpenRouter.
+specifico, es. `meta-llama/llama-3.3-70b-instruct:free`.
 
 ---
 

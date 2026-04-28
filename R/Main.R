@@ -333,7 +333,10 @@ cumba_experiment <- function(weather,
         tn_vec   <- round(as.numeric(dfYear[[TnColID]]), 2)
         p_vec    <- as.numeric(dfYear[[PColID]])
         doy_vec  <- dfYear[[DOYColID]]
-        date_vec <- dfYear[[1]]
+        # BUG FIX (Round 16): dfYear[[1]] e' la PRIMA colonna (Site, string),
+        # NON DATE. Usavamo date_vec[day] come SITO al posto di una data, e
+        # l'override con date non veniva MAI applicato. Uso dfYear$DATE per nome.
+        date_vec <- as.Date(dfYear$DATE)
         lat_vec  <- if (estimateRad == T) round(as.numeric(dfYear[[LatColID]]), 2) else NULL
         rad_vec  <- if (estimateRad == F) round(as.numeric(dfYear[[RadColID]]), 2) else NULL
         et0_vec  <- if (estimateET0 == F) round(as.numeric(dfYear[[ET0ColID]]), 2) else NULL
@@ -754,16 +757,51 @@ cumba_experiment <- function(weather,
 #' # )
 #'
 #' @export
-cumba_scenario <- function(weather, param, 
-                           estimateRad = TRUE, 
+cumba_scenario <- function(weather, param,
+                           estimateRad = TRUE,
                            estimateET0 = TRUE,
                            transplantingDOY = 120,
                            irrigationStrategy = list(
                              vegetative = list(wsLevel = 0.5, turnMin = 2),
                              reproductive = list(wsLevel = 0.5, turnMin = 2),
                              ripening = list(wsLevel = 0.5, turnMin = 2)),
-                           fullOut = FALSE)
+                           fullOut = FALSE,
+                           irrigationOverride = NULL)
 {
+  # ---- irrigationOverride (Round 5) ----------------------------------
+  # Permette all'agricoltore di SOVRASCRIVERE la decisione automatica
+  # del modello per certi giorni:
+  #   data.frame(date = as.Date(...), mm = numeric, action = c("skip","applied"))
+  # action = "skip"    -> forza irrigation = 0 in quel giorno
+  # action = "applied" -> forza irrigation = mm in quel giorno (anche se
+  #                       il modello non avrebbe irrigato)
+  # Pre-indicizziamo per data per accesso O(1) nel daily loop.
+  .ovr_skip <- character(0)
+  .ovr_appl_dates <- character(0)
+  .ovr_appl_mm    <- numeric(0)
+  if (!is.null(irrigationOverride) &&
+      is.data.frame(irrigationOverride) &&
+      nrow(irrigationOverride) > 0L &&
+      all(c("date","action") %in% names(irrigationOverride))) {
+    o <- irrigationOverride
+    o$date <- tryCatch(format(as.Date(o$date), "%Y-%m-%d"),
+                       error = function(e) as.character(o$date))
+    o$action <- as.character(o$action)
+    sk <- !is.na(o$action) & o$action == "skip"
+    ap <- !is.na(o$action) & o$action == "applied"
+    .ovr_skip       <- o$date[sk]
+    .ovr_appl_dates <- o$date[ap]
+    .ovr_appl_mm    <- if ("mm" %in% names(o))
+                         suppressWarnings(as.numeric(o$mm[ap]))
+                       else numeric(sum(ap))
+    .ovr_appl_mm[!is.finite(.ovr_appl_mm)] <- 0
+    # Round 14: log SPAVENTOSI per capire perche' l'override non si applica
+    cat(sprintf("[CUMBA OVERRIDE SETUP] %d skip + %d applied\n",
+                length(.ovr_skip), length(.ovr_appl_dates)))
+    cat("  skip dates:    ", paste(.ovr_skip, collapse = ", "), "\n")
+    cat("  applied dates: ", paste(.ovr_appl_dates, collapse = ", "), "\n")
+    cat("  applied mm:    ", paste(.ovr_appl_mm, collapse = ", "), "\n")
+  }
   # convert param list
   if (is.list(param) && all(sapply(param, function(p) is.list(p) && "value" %in% names(p)))) {
     param <- tibble::as_tibble(lapply(param, function(p) p$value))
@@ -977,7 +1015,10 @@ cumba_scenario <- function(weather, param,
         tn_vec   <- round(as.numeric(dfYear[[TnColID]]), 2)
         p_vec    <- as.numeric(dfYear[[PColID]])
         doy_vec  <- dfYear[[DOYColID]]
-        date_vec <- dfYear[[1]]
+        # BUG FIX (Round 16): dfYear[[1]] e' la PRIMA colonna (Site, string),
+        # NON DATE. Usavamo date_vec[day] come SITO al posto di una data, e
+        # l'override con date non veniva MAI applicato. Uso dfYear$DATE per nome.
+        date_vec <- as.Date(dfYear$DATE)
         lat_vec  <- if (estimateRad == T) round(as.numeric(dfYear[[LatColID]]), 2) else NULL
         rad_vec  <- if (estimateRad == F) round(as.numeric(dfYear[[RadColID]]), 2) else NULL
         et0_vec  <- if (estimateET0 == F) round(as.numeric(dfYear[[ET0ColID]]), 2) else NULL
@@ -1031,13 +1072,49 @@ cumba_scenario <- function(weather, param,
               pwc1 <- 3 * (fieldCapacity )*10
               pwc2  <- (rootState-3)* (fieldCapacity )*10
               soilWFC <- pwc1+pwc2
-              
+
               #actual soil water
               soilWActual <- wc1mm + wc2mm
-              
+
               irrigation <- soilWFC-soilWActual
             }else{
               irrigation<-0
+            }
+
+            # Round 14: override agronomico CON LOG ESPLICITI. Stampa
+            # date_chr di OGNI giorno + match con .ovr_skip / .ovr_appl_dates.
+            # Cosi' vediamo se il problema e' nel match (date diverse) o
+            # nel branch (l'if non viene eseguito).
+            if (length(.ovr_skip) > 0L || length(.ovr_appl_dates) > 0L) {
+              date_chr <- tryCatch(
+                format(as.Date(date), "%Y-%m-%d"),
+                error = function(e) NA_character_
+              )
+              # Log SOLO le date di interesse (override) per non sommergere
+              if (!is.na(date_chr) &&
+                  (date_chr %in% .ovr_skip ||
+                   date_chr %in% .ovr_appl_dates)) {
+                cat(sprintf("[CUMBA daily loop] day=%d doy=%d date=%s phenoCode=%d ws_pre=%.3f irrigation_pre=%.1f\n",
+                            day, doy, date_chr,
+                            as.integer(phenoCode),
+                            as.numeric(ws),
+                            as.numeric(irrigation)))
+              }
+              if (!is.na(date_chr)) {
+                if (date_chr %in% .ovr_skip) {
+                  cat(sprintf("  [OVR APPLY skip] irrigation %.1f -> 0\n",
+                              irrigation))
+                  irrigation <- 0
+                } else if (length(.ovr_appl_dates) > 0L) {
+                  ix_ap <- match(date_chr, .ovr_appl_dates)
+                  if (!is.na(ix_ap)) {
+                    new_mm <- as.numeric(.ovr_appl_mm[ix_ap])
+                    cat(sprintf("  [OVR APPLY applied] irrigation %.1f -> %.1f\n",
+                                irrigation, new_mm))
+                    irrigation <- new_mm
+                  }
+                }
+              }
             }
           
           
@@ -1438,7 +1515,9 @@ kcCompute<-function(fInt,kcIni,kcMax,kcMaxAct, cycleFIntMax,cyclePerc)
   else {
   kcFinal<- (kcIni+kcMaxAct)*0.5
   cyclePercSen<- (cycleFIntMax-fInt )/(cycleFIntMax-.5)
-     kc<- kcFinal+(kcMaxAct-kcFinal) *(1- cyclePercSen)
+  kc<- kcFinal+(kcMaxAct-kcFinal) *(1- cyclePercSen)
+  
+  if(kc<kcFinal)kc<-kcFinal
   }
   return(kc)
 }
@@ -1853,6 +1932,7 @@ BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
     fruitFreshWeightPot<-freshWeightFunction[[1]]
     fruitFreshWeightAct<-freshWeightFunction[[2]]
     
+    # NB: condizione del modello originale.
     if(fruitWaterContentPot < fruitWaterContentMax*.99)
     {
       brixPot<-NA
@@ -1862,6 +1942,15 @@ BRIX_model<-function(k0,dm_rate,dm_state,latitude,doy,carbonSugar_y,
     {
       brixPot<-(100*carbonSugarState)/(gammaSugar*fruitFreshWeightPot)
       brixAct<-(100*carbonSugarState)/(gammaSugar*fruitFreshWeightAct)
+    }
+    # Round 14: log brix per i giorni in fase di accumulo (fwcPot >= max*0.99)
+    if (fruitWaterContentPot >= fruitWaterContentMax * .99 &&
+        is.finite(brixAct) && brixAct > 0 &&
+        runif(1) < 0.05) {  # campionamento al 5% per non sommergere log
+      cat(sprintf("[BRIX] doy=%d cycleC=%.1f%% fwcPot=%.3f fwcMax=%.3f carbonSugar=%.4f fwAct=%.2f -> brixAct=%.3f\n",
+                  doy, cycleCompletion,
+                  fruitWaterContentPot, fruitWaterContentMax,
+                  carbonSugarState, fruitFreshWeightAct, brixAct))
     }
   }
   else
