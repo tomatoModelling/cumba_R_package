@@ -33,6 +33,9 @@
 #
 # =====================================================================
 
+# ---- 0) Operatore null-coalescing per compat ----------------------------
+if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
+
 # ---- 1) Pacchetti --------------------------------------------------------
 need <- function(pkg) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -43,13 +46,45 @@ need("rsconnect")
 need("remotes")
 
 # ---- 2) Installa cumba da GitHub ----------------------------------------
-# Cosi' rsconnect, quando scopre che l'app fa library(cumba), lo registra
-# nel manifest con il commit GitHub corrente (lo SHA viene serializzato).
-cat("\n[1/4] Installo cumba da GitHub...\n")
+# IMPORTANTE: rsconnect esige metadati "Remote*" (RemoteType, RemoteRepo,
+# ecc.) per pubblicare un pacchetto non-CRAN. Se cumba era installato via
+# devtools::install() o load_all, quei metadati non ci sono e shinyapps.io
+# rifiuta con "GithubUsername must be specified for GitHub package source".
+# Forziamo: disinstallo + reinstallo via remotes::install_github (che
+# scrive i Remote* corretti).
+cat("\n[1/4] Reinstallo cumba da GitHub (forzato)...\n")
+# Scarica devtools::load_all in-memory se presente
+if ("cumba" %in% loadedNamespaces()) {
+  try(detach("package:cumba", unload = TRUE, character.only = TRUE),
+      silent = TRUE)
+  try(unloadNamespace("cumba"), silent = TRUE)
+}
+# Disinstalla la versione corrente (qualunque source)
+if ("cumba" %in% rownames(installed.packages())) {
+  cat("  rimuovo cumba esistente...\n")
+  try(remove.packages("cumba"), silent = TRUE)
+}
+# Reinstalla SEMPRE da GitHub (force = TRUE per essere sicuri)
 remotes::install_github("tomatoModelling/cumba_R_package",
-                        upgrade = "never", quiet = FALSE)
+                        upgrade = "never", force = TRUE, quiet = FALSE)
 
-# Quick sanity check: il package si carica?
+# Verifica metadati GitHub: deve avere RemoteType=github + RemoteUsername
+desc <- packageDescription("cumba")
+remote_type <- desc$RemoteType %||% NA_character_
+remote_user <- desc$RemoteUsername %||% NA_character_
+remote_repo <- desc$RemoteRepo %||% NA_character_
+cat(sprintf("  metadati cumba: RemoteType='%s', RemoteUsername='%s', RemoteRepo='%s'\n",
+            remote_type, remote_user, remote_repo))
+if (is.na(remote_type) || remote_type != "github" ||
+    is.na(remote_user) || !nzchar(remote_user)) {
+  stop("ERRORE: cumba non e' installato da GitHub correttamente. ",
+       "remotes::install_github() ha fallito o non ha scritto i metadati Remote*. ",
+       "Controlla che il repo tomatoModelling/cumba_R_package sia accessibile e ",
+       "che remotes/devtools siano aggiornati: ",
+       "install.packages(c('remotes', 'rsconnect'))")
+}
+
+# Quick sanity check
 ok <- suppressMessages(suppressWarnings(
   tryCatch({ library(cumba); TRUE }, error = function(e) FALSE)
 ))
